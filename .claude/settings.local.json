@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(cargo tree:*)",
+      "Bash(bd init:*)",
+      "Bash(bd create:*)",
+      "Bash(bd dep add:*)",
+      "Bash(bd ready:*)",
+      "Bash(bd list:*)",
+      "Bash(bd dep tree:*)",
+      "Bash(bd update:*)",
+      "Bash(bd close sc-fhk:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

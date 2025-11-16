@@ -469,6 +469,7 @@ dependencies = [
  "argon2",
  "clap",
  "rand",
+ "rand_core",
  "rpassword",
  "subtle",
  "tempfile",
