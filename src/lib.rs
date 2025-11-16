@@ -31,6 +31,7 @@ pub mod error;
 pub mod progress;
 pub mod storage;
 pub mod validation;
+pub mod volume;
 
 // Re-export commonly used types
 pub use config::{CryptoConfig, MAGIC_BYTES, NONCE_LEN};

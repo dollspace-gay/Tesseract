@@ -36,6 +36,24 @@ cargo build --release
 
 The compiled binary will be located at target/release/secure-cryptor.
 
+### Optional Feature: Encrypted Volumes
+
+Secure Cryptor supports encrypted volume mounting through the optional `encrypted-volumes` feature flag. This feature is currently **in development** and requires additional system dependencies.
+
+**Building with encrypted volumes support:**
+
+```bash
+cargo build --release --features encrypted-volumes
+```
+
+**System Requirements:**
+
+- **Windows**: [WinFsp](https://winfsp.dev/) must be installed, plus LLVM/clang for building the bindings
+- **Linux**: FUSE kernel driver and libraries (`fusermount`, `libfuse`)
+- **macOS**: [macFUSE](https://macfuse.github.io/) 5.1.1 or later
+
+**Note**: The encrypted-volumes feature is not included in default builds. The main file encryption/decryption functionality works without these dependencies.
+
 🚀 Usage
 
 The program uses subcommands: encrypt and decrypt.

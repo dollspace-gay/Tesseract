@@ -38,7 +38,13 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(git reset:*)",
-      "Bash(wsl -d fedora -- cargo build:*)"
+      "Bash(wsl -d fedora -- cargo build:*)",
+      "Bash(cargo search:*)",
+      "Bash(if not exist \"src\\bin\\gui\" mkdir \"src\\bin\\gui\")",
+      "Bash(cmd /c \"if not exist src\\bin\\gui mkdir src\\bin\\gui\")",
+      "Bash(move:*)",
+      "Bash(cmd /c \"move src\\bin\\tray.rs src\\bin\\gui\\tray.rs\")",
+      "Bash(cmd /c \"move src\\bin\\gui.rs src\\bin\\gui\\main.rs\")"
     ],
     "deny": [],
     "ask": []
