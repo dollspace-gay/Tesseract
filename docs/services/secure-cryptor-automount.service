@@ -1,0 +1,46 @@
+[Unit]
+Description=Secure Cryptor Auto-Mount Service
+Documentation=https://github.com/yourusername/secure-cryptor
+After=local-fs.target network.target systemd-cryptsetup@.service
+Before=remote-fs-pre.target
+Wants=systemd-cryptsetup@.service
+DefaultDependencies=no
+
+[Service]
+Type=forking
+ExecStart=/usr/bin/secure-cryptor automount start
+ExecStop=/usr/bin/secure-cryptor automount stop
+ExecReload=/usr/bin/secure-cryptor automount reload
+Restart=on-failure
+RestartSec=5s
+
+# Security hardening
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/mnt /media /run/secure-cryptor
+NoNewPrivileges=true
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_DAC_OVERRIDE
+# CAP_SYS_ADMIN: Required for mounting filesystems
+# CAP_DAC_OVERRIDE: Required for accessing encrypted containers
+
+# Resource limits
+LimitNOFILE=65536
+LimitMEMLOCK=infinity
+# Infinity for mlock() to prevent key material from being swapped
+
+# Environment
+Environment=RUST_LOG=info
+EnvironmentFile=-/etc/default/secure-cryptor
+
+# User (runs as root for mounting privileges)
+User=root
+Group=root
+
+# Timeout
+TimeoutStartSec=300
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target
+WantedBy=graphical.target

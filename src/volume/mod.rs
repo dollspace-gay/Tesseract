@@ -4,6 +4,7 @@
 /// volumes that can be mounted as filesystems using FUSE (Linux/macOS)
 /// or WinFsp (Windows).
 
+pub mod automount;
 pub mod container;
 pub mod filesystem;
 pub mod header;
@@ -12,6 +13,7 @@ pub mod mount;
 pub mod operations;
 pub mod sector;
 
+pub use automount::{AutoMountConfig, AutoMountService, AutoMountAuth, VolumeConfig, VolumeConfigBuilder};
 pub use container::{Container, METADATA_SIZE, KEYSLOTS_SIZE};
 pub use filesystem::{EncryptedFilesystem, FileAttr, FileType, FilesystemError, DirEntry};
 pub use header::VolumeHeader;
