@@ -5,6 +5,7 @@
 
 pub mod aes_gcm;
 pub mod kdf;
+pub mod streaming;
 
 use crate::error::Result;
 use zeroize::Zeroizing;
