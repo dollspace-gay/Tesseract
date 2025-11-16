@@ -4399,6 +4399,7 @@ dependencies = [
  "eframe",
  "flate2",
  "fuser",
+ "hex",
  "image",
  "notify-rust",
  "proptest",

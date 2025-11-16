@@ -265,6 +265,61 @@ impl KeySlots {
     pub fn is_slot_active(&self, index: usize) -> bool {
         index < MAX_KEY_SLOTS && self.slots[index].active
     }
+
+    /// Finds the first free (inactive) slot
+    ///
+    /// # Returns
+    ///
+    /// Some(index) if a free slot is found, None if all slots are full
+    pub fn find_free_slot(&self) -> Option<usize> {
+        self.slots
+            .iter()
+            .position(|slot| !slot.active)
+    }
+
+    /// Changes the password for an existing key slot
+    ///
+    /// This updates the encrypted master key in the specified slot with
+    /// a new password-derived key.
+    ///
+    /// # Arguments
+    ///
+    /// * `master_key` - The master key to re-encrypt
+    /// * `slot_index` - The slot index to update
+    /// * `new_password` - The new password for this slot
+    ///
+    /// # Returns
+    ///
+    /// Ok(()) if the password was changed successfully
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The slot index is invalid
+    /// - The slot is not active
+    /// - Encryption fails
+    pub fn change_password(
+        &mut self,
+        master_key: &MasterKey,
+        slot_index: usize,
+        new_password: &str,
+    ) -> Result<(), KeySlotError> {
+        if slot_index >= MAX_KEY_SLOTS {
+            return Err(KeySlotError::InvalidSlotIndex(slot_index));
+        }
+
+        if !self.slots[slot_index].active {
+            return Err(KeySlotError::NoActiveSlots);
+        }
+
+        // Create new key slot with new password
+        let new_slot = KeySlot::new(master_key, new_password)?;
+
+        // Replace the old slot
+        self.slots[slot_index] = new_slot;
+
+        Ok(())
+    }
 }
 
 impl Default for KeySlots {

@@ -571,6 +571,490 @@ impl Container {
     pub fn is_unlocked(&self) -> bool {
         self.master_key.is_some()
     }
+
+    /// Resizes the encrypted container
+    ///
+    /// This changes the size of the data area in the container. The header
+    /// and key slots remain unchanged.
+    ///
+    /// # Arguments
+    ///
+    /// * `new_size` - The new size for the data area in bytes
+    ///
+    /// # Returns
+    ///
+    /// Ok(()) if the resize was successful
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The container is locked
+    /// - The new size is invalid (smaller than sector size)
+    /// - File operations fail
+    ///
+    /// # Safety Note
+    ///
+    /// When shrinking a container, any data beyond the new size will be lost.
+    /// Ensure you have backed up important data before shrinking.
+    pub fn resize(&mut self, new_size: u64) -> Result<()> {
+        // Ensure container is unlocked
+        if !self.is_unlocked() {
+            return Err(ContainerError::Other(
+                "Container must be unlocked to resize".to_string()
+            ));
+        }
+
+        // Validate new size
+        let sector_size = self.header.sector_size();
+        if new_size < sector_size as u64 {
+            return Err(ContainerError::InvalidSize(format!(
+                "New size ({} bytes) must be at least one sector ({})",
+                new_size, sector_size
+            )));
+        }
+
+        // Get file handle
+        let file = self.file.as_mut()
+            .ok_or_else(|| ContainerError::Other("Container file not open".to_string()))?;
+
+        // Calculate new total size
+        let new_total_size = METADATA_SIZE as u64 + new_size;
+
+        // Resize the file
+        file.set_len(new_total_size)?;
+        file.sync_all()?;
+
+        // Update header with new volume size
+        self.header = VolumeHeader::new(
+            new_size,
+            sector_size,
+            *self.header.salt(),
+            *self.header.header_iv(),
+        );
+
+        // Write updated header
+        file.seek(SeekFrom::Start(0))?;
+        self.header.write_to(file)?;
+        file.sync_all()?;
+
+        Ok(())
+    }
+
+    /// Returns the current data area size in bytes (excluding metadata)
+    pub fn size(&self) -> u64 {
+        self.header.volume_size()
+    }
+
+    /// Returns the total file size in bytes (including metadata)
+    pub fn total_size(&self) -> u64 {
+        METADATA_SIZE as u64 + self.header.volume_size()
+    }
+
+    /// Creates a hidden volume within this container
+    ///
+    /// A hidden volume provides plausible deniability by storing an encrypted
+    /// volume inside the free space of the outer (decoy) volume. The hidden
+    /// volume has its own password and encryption key, independent of the outer
+    /// volume.
+    ///
+    /// # Arguments
+    ///
+    /// * `hidden_size` - Size of the hidden volume in bytes
+    /// * `hidden_password` - Password for the hidden volume (different from outer)
+    /// * `hidden_offset` - Offset from start of outer data area where hidden volume begins
+    ///
+    /// # Returns
+    ///
+    /// Ok(()) if the hidden volume was created successfully
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The container is locked
+    /// - The hidden volume size is too large for the available space
+    /// - The offset is invalid
+    ///
+    /// # Security Note
+    ///
+    /// To maintain plausible deniability:
+    /// - Use a different password for the hidden volume
+    /// - Fill the outer volume with decoy data to hide the hidden volume
+    /// - Never reveal the hidden volume password under duress
+    pub fn create_hidden_volume(
+        &mut self,
+        hidden_size: u64,
+        hidden_password: &str,
+        hidden_offset: u64,
+    ) -> Result<()> {
+        // Ensure container is unlocked
+        if !self.is_unlocked() {
+            return Err(ContainerError::Other(
+                "Container must be unlocked to create hidden volume".to_string()
+            ));
+        }
+
+        // Validate sizes
+        let sector_size = self.header.sector_size();
+        if hidden_size < sector_size as u64 {
+            return Err(ContainerError::InvalidSize(format!(
+                "Hidden volume size ({} bytes) must be at least one sector ({})",
+                hidden_size, sector_size
+            )));
+        }
+
+        let hidden_total_size = METADATA_SIZE as u64 + hidden_size;
+        let outer_data_size = self.header.volume_size();
+
+        if hidden_offset + hidden_total_size > outer_data_size {
+            return Err(ContainerError::InvalidSize(format!(
+                "Hidden volume ({} bytes) does not fit in outer volume (offset: {}, available: {})",
+                hidden_total_size, hidden_offset, outer_data_size
+            )));
+        }
+
+        // Generate master key for hidden volume
+        let hidden_master_key = MasterKey::generate();
+
+        // Generate salt and IV for hidden volume
+        let mut hidden_salt = [0u8; 32];
+        let mut hidden_iv = [0u8; 12];
+        rand::thread_rng().fill_bytes(&mut hidden_salt);
+        rand::thread_rng().fill_bytes(&mut hidden_iv);
+
+        // Create hidden volume header
+        let hidden_header = VolumeHeader::new(
+            hidden_size,
+            sector_size,
+            hidden_salt,
+            hidden_iv,
+        );
+
+        // Create key slots for hidden volume
+        let mut hidden_keyslots = KeySlots::new();
+        hidden_keyslots.add_slot(&hidden_master_key, hidden_password)?;
+
+        // Calculate absolute file offset (outer metadata + outer data offset + hidden offset)
+        let absolute_offset = METADATA_SIZE as u64 + hidden_offset;
+
+        // Get file handle
+        let file = self.file.as_mut()
+            .ok_or_else(|| ContainerError::Other("Container file not open".to_string()))?;
+
+        // Write hidden volume header
+        file.seek(SeekFrom::Start(absolute_offset))?;
+        hidden_header.write_to(file)?;
+
+        // Write hidden volume key slots
+        let keyslots_bytes = bincode::serialize(&hidden_keyslots)?;
+        let mut padded_keyslots = keyslots_bytes;
+        padded_keyslots.resize(KEYSLOTS_SIZE, 0);
+        file.write_all(&padded_keyslots)?;
+
+        file.sync_all()?;
+
+        Ok(())
+    }
+
+    /// Opens a hidden volume from within this container
+    ///
+    /// # Arguments
+    ///
+    /// * `hidden_password` - Password for the hidden volume
+    /// * `hidden_offset` - Offset from start of outer data area where hidden volume begins
+    ///
+    /// # Returns
+    ///
+    /// A new Container instance for the hidden volume
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The hidden volume cannot be found at the specified offset
+    /// - The password is incorrect
+    /// - The file cannot be read
+    pub fn open_hidden_volume(
+        &self,
+        hidden_password: &str,
+        hidden_offset: u64,
+    ) -> Result<Container> {
+        let outer_data_size = self.header.volume_size();
+
+        // Validate offset
+        if hidden_offset + METADATA_SIZE as u64 > outer_data_size {
+            return Err(ContainerError::Other(
+                "Invalid offset for hidden volume".to_string()
+            ));
+        }
+
+        // Calculate absolute file offset
+        let absolute_offset = METADATA_SIZE as u64 + hidden_offset;
+
+        // Open the file
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&self.path)?;
+
+        // Seek to hidden volume header
+        file.seek(SeekFrom::Start(absolute_offset))?;
+
+        // Read hidden volume header
+        let hidden_header = VolumeHeader::read_from(&mut file)?;
+
+        // Read hidden volume key slots
+        let mut keyslots_bytes = vec![0u8; KEYSLOTS_SIZE];
+        file.read_exact(&mut keyslots_bytes)?;
+        let hidden_keyslots: KeySlots = bincode::deserialize(&keyslots_bytes)?;
+
+        // Unlock with hidden password
+        let hidden_master_key = hidden_keyslots.unlock(hidden_password)?;
+
+        // Create a Container instance for the hidden volume
+        // Note: The hidden volume shares the same file as the outer volume
+        Ok(Container {
+            path: self.path.clone(),
+            header: hidden_header,
+            key_slots: hidden_keyslots,
+            master_key: Some(hidden_master_key),
+            file: Some(file),
+        })
+    }
+
+    /// Checks if a hidden volume exists at the specified offset
+    ///
+    /// This checks if there's a valid volume header at the expected location
+    /// without attempting to decrypt it.
+    ///
+    /// # Arguments
+    ///
+    /// * `hidden_offset` - Offset from start of outer data area where to check
+    ///
+    /// # Returns
+    ///
+    /// true if a valid header signature is found, false otherwise
+    pub fn has_hidden_volume(&self, hidden_offset: u64) -> bool {
+        let outer_data_size = self.header.volume_size();
+
+        if hidden_offset + METADATA_SIZE as u64 > outer_data_size {
+            return false;
+        }
+
+        let absolute_offset = METADATA_SIZE as u64 + hidden_offset;
+
+        // Try to read the header
+        if let Ok(mut file) = OpenOptions::new().read(true).open(&self.path) {
+            if file.seek(SeekFrom::Start(absolute_offset)).is_ok() {
+                // Try to read and validate the header
+                if let Ok(_header) = VolumeHeader::read_from(&mut file) {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    /// Generates a cryptographically secure recovery key
+    ///
+    /// The recovery key is a 32-byte (256-bit) random value encoded as
+    /// a 64-character hexadecimal string. This can be used like a password
+    /// to add a recovery key slot or reset passwords.
+    ///
+    /// # Returns
+    ///
+    /// A hex-encoded recovery key string (64 characters)
+    ///
+    /// # Security Note
+    ///
+    /// Store this recovery key in a secure location (e.g., password manager,
+    /// encrypted backup, or printed and stored in a safe). Anyone with this
+    /// recovery key can unlock the volume.
+    pub fn generate_recovery_key() -> String {
+        let mut key = [0u8; 32];
+        rand::thread_rng().fill_bytes(&mut key);
+        hex::encode(key)
+    }
+
+    /// Exports a recovery key to a file with metadata
+    ///
+    /// Creates a human-readable file containing the recovery key and
+    /// instructions for use.
+    ///
+    /// # Arguments
+    ///
+    /// * `recovery_key` - The hex-encoded recovery key
+    /// * `output_path` - Path where the recovery key file will be created
+    /// * `container_name` - Optional name/description of the container
+    ///
+    /// # Returns
+    ///
+    /// Ok(()) if the file was created successfully
+    pub fn export_recovery_key_file(
+        recovery_key: &str,
+        output_path: impl AsRef<Path>,
+        container_name: Option<&str>,
+    ) -> Result<()> {
+        use std::time::SystemTime;
+
+        let timestamp = SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        let name = container_name.unwrap_or("Encrypted Volume");
+
+        let content = format!(
+            "SECURE CRYPTOR RECOVERY KEY\n\
+             =============================\n\n\
+             Container: {}\n\
+             Generated: {}\n\n\
+             RECOVERY KEY:\n\
+             {}\n\n\
+             INSTRUCTIONS:\n\
+             1. Store this file in a secure location\n\
+             2. Do not share this key with unauthorized persons\n\
+             3. Use this key to reset your password if forgotten\n\
+             4. To reset password, use: secure-cryptor recover <container> --recovery-key <key>\n\n\
+             WARNING: Anyone with this recovery key can access your encrypted volume.\n",
+            name,
+            timestamp,
+            recovery_key
+        );
+
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(output_path)?;
+
+        file.write_all(content.as_bytes())?;
+        file.sync_all()?;
+
+        Ok(())
+    }
+
+    /// Resets a password using a recovery key
+    ///
+    /// This allows resetting a password if the original password is forgotten,
+    /// as long as the recovery key is available. The recovery key must have
+    /// been previously added to a key slot.
+    ///
+    /// # Arguments
+    ///
+    /// * `recovery_key` - The hex-encoded recovery key
+    /// * `new_password` - The new password to set
+    ///
+    /// # Returns
+    ///
+    /// Ok(()) if the password was reset successfully
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The recovery key is invalid or not found in any key slot
+    /// - The container is locked
+    /// - File operations fail
+    pub fn reset_password_with_recovery_key(
+        &mut self,
+        recovery_key: &str,
+        new_password: &str,
+    ) -> Result<()> {
+        // Validate recovery key format (should be 64 hex characters)
+        if recovery_key.len() != 64 {
+            return Err(ContainerError::Other(
+                "Invalid recovery key: must be 64 hex characters".to_string()
+            ));
+        }
+
+        // Validate that it's valid hex
+        if hex::decode(recovery_key).is_err() {
+            return Err(ContainerError::Other(
+                "Invalid recovery key: contains non-hex characters".to_string()
+            ));
+        }
+
+        // Try to unlock with recovery key
+        let master_key = self.key_slots.unlock(recovery_key)
+            .map_err(|_| ContainerError::Other(
+                "Recovery key not found or invalid".to_string()
+            ))?;
+
+        // Update master key in container
+        self.master_key = Some(master_key.clone());
+
+        // Find the first non-recovery key slot (or first free slot) to update
+        // We'll update the first user password slot (typically slot 1)
+        let slot_index = if self.key_slots.active_count() > 1 {
+            // Update the first non-recovery slot
+            1
+        } else {
+            // Add new password slot
+            self.key_slots.find_free_slot()
+                .ok_or_else(|| ContainerError::KeySlot(
+                    super::keyslot::KeySlotError::AllSlotsFull
+                ))?
+        };
+
+        // Update or add the password slot
+        if self.key_slots.is_slot_active(slot_index) {
+            self.key_slots.change_password(&master_key, slot_index, new_password)?;
+        } else {
+            self.key_slots.add_slot(&master_key, new_password)?;
+        }
+
+        // Write updated key slots to disk
+        self.write_keyslots()?;
+
+        Ok(())
+    }
+
+    /// Adds a recovery key to the first available key slot
+    ///
+    /// This should be called during container creation or when adding
+    /// a recovery mechanism to an existing container.
+    ///
+    /// # Arguments
+    ///
+    /// * `recovery_key` - The hex-encoded recovery key to add
+    ///
+    /// # Returns
+    ///
+    /// Ok(slot_index) with the index of the slot where the recovery key was added
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The container is locked (master key not available)
+    /// - All key slots are full
+    /// - The recovery key format is invalid
+    pub fn add_recovery_key(&mut self, recovery_key: &str) -> Result<usize> {
+        // Validate recovery key format
+        if recovery_key.len() != 64 {
+            return Err(ContainerError::Other(
+                "Invalid recovery key: must be 64 hex characters".to_string()
+            ));
+        }
+
+        // Validate that it's valid hex
+        if hex::decode(recovery_key).is_err() {
+            return Err(ContainerError::Other(
+                "Invalid recovery key: contains non-hex characters".to_string()
+            ));
+        }
+
+        // Get master key
+        let master_key = self.master_key.as_ref()
+            .ok_or_else(|| ContainerError::Other(
+                "Container must be unlocked to add recovery key".to_string()
+            ))?;
+
+        // Add recovery key to a slot
+        let slot_index = self.key_slots.add_slot(master_key, recovery_key)?;
+
+        // Write updated key slots to disk
+        self.write_keyslots()?;
+
+        Ok(slot_index)
+    }
 }
 
 impl Drop for Container {
@@ -899,5 +1383,538 @@ mod tests {
 
         cleanup(&container_path);
         cleanup(&backup_path);
+    }
+
+    #[test]
+    fn test_generate_recovery_key() {
+        let key1 = Container::generate_recovery_key();
+        let key2 = Container::generate_recovery_key();
+
+        // Keys should be 64 hex characters
+        assert_eq!(key1.len(), 64);
+        assert_eq!(key2.len(), 64);
+
+        // Keys should be different
+        assert_ne!(key1, key2);
+
+        // Keys should be valid hex
+        assert!(hex::decode(&key1).is_ok());
+        assert!(hex::decode(&key2).is_ok());
+    }
+
+    #[test]
+    fn test_add_recovery_key() {
+        let path = temp_path("recovery_key");
+        cleanup(&path);
+
+        let mut container = Container::create(
+            &path,
+            1024 * 1024,
+            "Password1!",
+            4096,
+        ).unwrap();
+
+        // Generate and add recovery key
+        let recovery_key = Container::generate_recovery_key();
+        let slot_index = container.add_recovery_key(&recovery_key).unwrap();
+
+        // Should have 2 slots now (password + recovery)
+        assert_eq!(container.key_slots().active_count(), 2);
+        assert!(container.key_slots().is_slot_active(slot_index));
+
+        // Close container
+        drop(container);
+
+        // Reopen with recovery key
+        let container = Container::open(&path, &recovery_key).unwrap();
+        assert!(container.is_unlocked());
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn test_reset_password_with_recovery_key() {
+        let path = temp_path("password_reset");
+        cleanup(&path);
+
+        let mut container = Container::create(
+            &path,
+            1024 * 1024,
+            "OriginalPassword!",
+            4096,
+        ).unwrap();
+
+        // Add recovery key
+        let recovery_key = Container::generate_recovery_key();
+        container.add_recovery_key(&recovery_key).unwrap();
+
+        // Close container
+        drop(container);
+
+        // Reopen with original password
+        let mut container = Container::open(&path, "OriginalPassword!").unwrap();
+
+        // "Forget" the password and use recovery key to reset it
+        container.reset_password_with_recovery_key(&recovery_key, "NewPassword!").unwrap();
+
+        // Close container
+        drop(container);
+
+        // Original password should still work (we didn't remove it)
+        let container1 = Container::open(&path, "OriginalPassword!").unwrap();
+        assert!(container1.is_unlocked());
+        drop(container1);
+
+        // New password should also work
+        let container2 = Container::open(&path, "NewPassword!").unwrap();
+        assert!(container2.is_unlocked());
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn test_invalid_recovery_key() {
+        let path = temp_path("invalid_recovery");
+        cleanup(&path);
+
+        let mut container = Container::create(
+            &path,
+            1024 * 1024,
+            "Password1!",
+            4096,
+        ).unwrap();
+
+        // Try to add invalid recovery key (wrong length)
+        let result = container.add_recovery_key("tooshort");
+        assert!(result.is_err());
+
+        // Try to add invalid recovery key (non-hex)
+        let result = container.add_recovery_key("z".repeat(64).as_str());
+        assert!(result.is_err());
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn test_export_recovery_key_file() {
+        let recovery_key = Container::generate_recovery_key();
+        let export_path = temp_path("recovery_key.txt");
+        cleanup(&export_path);
+
+        // Export recovery key
+        Container::export_recovery_key_file(
+            &recovery_key,
+            &export_path,
+            Some("Test Container"),
+        ).unwrap();
+
+        // Verify file was created
+        assert!(export_path.exists());
+
+        // Read and verify content
+        let content = fs::read_to_string(&export_path).unwrap();
+        assert!(content.contains("SECURE CRYPTOR RECOVERY KEY"));
+        assert!(content.contains("Test Container"));
+        assert!(content.contains(&recovery_key));
+        assert!(content.contains("INSTRUCTIONS"));
+
+        cleanup(&export_path);
+    }
+
+    #[test]
+    fn test_reset_password_without_recovery_key() {
+        let path = temp_path("no_recovery");
+        cleanup(&path);
+
+        let mut container = Container::create(
+            &path,
+            1024 * 1024,
+            "Password1!",
+            4096,
+        ).unwrap();
+
+        // Try to reset password with a recovery key that wasn't added
+        let fake_recovery_key = Container::generate_recovery_key();
+        let result = container.reset_password_with_recovery_key(&fake_recovery_key, "NewPass!");
+        assert!(result.is_err());
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn test_recovery_key_after_password_change() {
+        let path = temp_path("recovery_password_change");
+        cleanup(&path);
+
+        let mut container = Container::create(
+            &path,
+            1024 * 1024,
+            "Password1!",
+            4096,
+        ).unwrap();
+
+        // Add recovery key
+        let recovery_key = Container::generate_recovery_key();
+        container.add_recovery_key(&recovery_key).unwrap();
+
+        // Change the user password
+        container.add_password("Password2!").unwrap();
+        container.remove_password(0).unwrap(); // Remove original password
+
+        drop(container);
+
+        // Recovery key should still work
+        let container = Container::open(&path, &recovery_key).unwrap();
+        assert!(container.is_unlocked());
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn test_resize_expand() {
+        let path = temp_path("resize_expand");
+        cleanup(&path);
+
+        let initial_size = 1024 * 1024; // 1 MB
+        let mut container = Container::create(
+            &path,
+            initial_size,
+            "Password!",
+            4096,
+        ).unwrap();
+
+        // Verify initial size
+        assert_eq!(container.size(), initial_size);
+        assert_eq!(container.total_size(), METADATA_SIZE as u64 + initial_size);
+
+        // Expand to 2 MB
+        let new_size = 2 * 1024 * 1024;
+        container.resize(new_size).unwrap();
+
+        // Verify new size
+        assert_eq!(container.size(), new_size);
+        assert_eq!(container.total_size(), METADATA_SIZE as u64 + new_size);
+
+        // Verify file size on disk
+        let metadata = fs::metadata(&path).unwrap();
+        assert_eq!(metadata.len(), METADATA_SIZE as u64 + new_size);
+
+        // Close and reopen to verify persistence
+        drop(container);
+        let container = Container::open(&path, "Password!").unwrap();
+        assert_eq!(container.size(), new_size);
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn test_resize_shrink() {
+        let path = temp_path("resize_shrink");
+        cleanup(&path);
+
+        let initial_size = 2 * 1024 * 1024; // 2 MB
+        let mut container = Container::create(
+            &path,
+            initial_size,
+            "Password!",
+            4096,
+        ).unwrap();
+
+        // Shrink to 1 MB
+        let new_size = 1024 * 1024;
+        container.resize(new_size).unwrap();
+
+        // Verify new size
+        assert_eq!(container.size(), new_size);
+
+        // Verify file size on disk
+        let metadata = fs::metadata(&path).unwrap();
+        assert_eq!(metadata.len(), METADATA_SIZE as u64 + new_size);
+
+        // Close and reopen to verify persistence
+        drop(container);
+        let container = Container::open(&path, "Password!").unwrap();
+        assert_eq!(container.size(), new_size);
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn test_resize_invalid_size() {
+        let path = temp_path("resize_invalid");
+        cleanup(&path);
+
+        let mut container = Container::create(
+            &path,
+            1024 * 1024,
+            "Password!",
+            4096,
+        ).unwrap();
+
+        // Try to resize to less than one sector
+        let result = container.resize(1024);
+        assert!(result.is_err());
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn test_resize_locked_container() {
+        let path = temp_path("resize_locked");
+        cleanup(&path);
+
+        let mut container = Container::create(
+            &path,
+            1024 * 1024,
+            "Password!",
+            4096,
+        ).unwrap();
+
+        // Lock the container
+        container.lock();
+
+        // Try to resize locked container
+        let result = container.resize(2 * 1024 * 1024);
+        assert!(result.is_err());
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn test_size_methods() {
+        let path = temp_path("size_methods");
+        cleanup(&path);
+
+        let data_size = 1024 * 1024;
+        let container = Container::create(
+            &path,
+            data_size,
+            "Password!",
+            4096,
+        ).unwrap();
+
+        assert_eq!(container.size(), data_size);
+        assert_eq!(container.total_size(), METADATA_SIZE as u64 + data_size);
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn test_create_hidden_volume() {
+        let path = temp_path("hidden_create");
+        cleanup(&path);
+
+        let outer_size = 10 * 1024 * 1024; // 10 MB
+        let mut outer = Container::create(
+            &path,
+            outer_size,
+            "OuterPassword!",
+            4096,
+        ).unwrap();
+
+        // Create hidden volume (1 MB at offset 5 MB from start of outer data)
+        let hidden_size = 1024 * 1024;
+        let offset = 5 * 1024 * 1024;
+        outer.create_hidden_volume(hidden_size, "HiddenPassword!", offset).unwrap();
+
+        // Drop to release file handle
+        drop(outer);
+
+        // Reopen and verify hidden volume exists
+        let outer = Container::open(&path, "OuterPassword!").unwrap();
+        assert!(outer.has_hidden_volume(offset));
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn test_open_hidden_volume() {
+        let path = temp_path("hidden_open");
+        cleanup(&path);
+
+        let outer_size = 10 * 1024 * 1024; // 10 MB
+        let mut outer = Container::create(
+            &path,
+            outer_size,
+            "OuterPassword!",
+            4096,
+        ).unwrap();
+
+        // Create hidden volume at offset 5 MB
+        let hidden_size = 1024 * 1024;
+        let offset = 5 * 1024 * 1024;
+        outer.create_hidden_volume(hidden_size, "HiddenPassword!", offset).unwrap();
+
+        // Drop to release file handle
+        drop(outer);
+
+        // Reopen outer and then open hidden volume
+        let outer = Container::open(&path, "OuterPassword!").unwrap();
+        let hidden = outer.open_hidden_volume("HiddenPassword!", offset).unwrap();
+        assert!(hidden.is_unlocked());
+        assert_eq!(hidden.size(), hidden_size);
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn test_hidden_volume_wrong_password() {
+        let path = temp_path("hidden_wrong_pass");
+        cleanup(&path);
+
+        let outer_size = 10 * 1024 * 1024;
+        let mut outer = Container::create(
+            &path,
+            outer_size,
+            "OuterPassword!",
+            4096,
+        ).unwrap();
+
+        let hidden_size = 1024 * 1024;
+        let offset = 5 * 1024 * 1024;
+        outer.create_hidden_volume(hidden_size, "HiddenPassword!", offset).unwrap();
+
+        // Drop to release file handle
+        drop(outer);
+
+        // Try to open with wrong password
+        let outer = Container::open(&path, "OuterPassword!").unwrap();
+        let result = outer.open_hidden_volume("WrongPassword!", offset);
+        assert!(result.is_err());
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn test_hidden_volume_too_large() {
+        let path = temp_path("hidden_too_large");
+        cleanup(&path);
+
+        let outer_size = 10 * 1024 * 1024;
+        let mut outer = Container::create(
+            &path,
+            outer_size,
+            "OuterPassword!",
+            4096,
+        ).unwrap();
+
+        // Try to create hidden volume larger than available space
+        let hidden_size = 20 * 1024 * 1024; // Larger than outer
+        let offset = 1024 * 1024;
+        let result = outer.create_hidden_volume(hidden_size, "HiddenPassword!", offset);
+        assert!(result.is_err());
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn test_hidden_volume_invalid_offset() {
+        let path = temp_path("hidden_invalid_offset");
+        cleanup(&path);
+
+        let outer_size = 10 * 1024 * 1024;
+        let mut outer = Container::create(
+            &path,
+            outer_size,
+            "OuterPassword!",
+            4096,
+        ).unwrap();
+
+        // Try to create hidden volume with offset beyond outer volume
+        let hidden_size = 1024 * 1024;
+        let offset = 20 * 1024 * 1024; // Larger than outer
+        let result = outer.create_hidden_volume(hidden_size, "HiddenPassword!", offset);
+        assert!(result.is_err());
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn test_hidden_volume_independence() {
+        use super::super::filesystem::EncryptedFilesystem;
+        use std::path::Path;
+
+        let path = temp_path("hidden_independence");
+        cleanup(&path);
+
+        let outer_size = 10 * 1024 * 1024;
+        let mut outer = Container::create(
+            &path,
+            outer_size,
+            "OuterPassword!",
+            4096,
+        ).unwrap();
+
+        // Create hidden volume at offset 5 MB
+        let hidden_size = 1024 * 1024;
+        let offset = 5 * 1024 * 1024;
+        outer.create_hidden_volume(hidden_size, "HiddenPassword!", offset).unwrap();
+
+        // Drop outer to release file handle
+        drop(outer);
+
+        // Open outer container and write outer data
+        let outer = Container::open(&path, "OuterPassword!").unwrap();
+        let mut outer_fs = outer.mount_filesystem().unwrap();
+        outer_fs.create(Path::new("/outer.txt"), 0o644).unwrap();
+        outer_fs.write(Path::new("/outer.txt"), 0, b"Outer data").unwrap();
+
+        // Verify outer data
+        let outer_data = outer_fs.read(Path::new("/outer.txt"), 0, 100).unwrap();
+        assert_eq!(&outer_data, b"Outer data");
+
+        drop(outer_fs);
+
+        // Open hidden volume and write different data
+        let outer = Container::open(&path, "OuterPassword!").unwrap();
+        let hidden = outer.open_hidden_volume("HiddenPassword!", offset).unwrap();
+        let mut hidden_fs = hidden.mount_filesystem().unwrap();
+        hidden_fs.create(Path::new("/hidden.txt"), 0o644).unwrap();
+        hidden_fs.write(Path::new("/hidden.txt"), 0, b"Hidden data").unwrap();
+
+        // Verify hidden filesystem has different data
+        let hidden_data = hidden_fs.read(Path::new("/hidden.txt"), 0, 100).unwrap();
+        assert_eq!(&hidden_data, b"Hidden data");
+
+        // Verify outer file doesn't exist in hidden volume
+        assert!(hidden_fs.getattr(Path::new("/outer.txt")).is_err());
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn test_has_hidden_volume() {
+        let path = temp_path("has_hidden");
+        cleanup(&path);
+
+        let outer_size = 10 * 1024 * 1024;
+        let mut outer = Container::create(
+            &path,
+            outer_size,
+            "OuterPassword!",
+            4096,
+        ).unwrap();
+
+        let offset = 5 * 1024 * 1024;
+
+        // Should not have hidden volume initially
+        assert!(!outer.has_hidden_volume(offset));
+
+        // Create hidden volume
+        outer.create_hidden_volume(1024 * 1024, "HiddenPassword!", offset).unwrap();
+
+        // Drop to release file handle
+        drop(outer);
+
+        // Reopen and check
+        let outer = Container::open(&path, "OuterPassword!").unwrap();
+
+        // Should now have hidden volume
+        assert!(outer.has_hidden_volume(offset));
+
+        // Check at wrong offset
+        assert!(!outer.has_hidden_volume(7 * 1024 * 1024));
+
+        cleanup(&path);
     }
 }
