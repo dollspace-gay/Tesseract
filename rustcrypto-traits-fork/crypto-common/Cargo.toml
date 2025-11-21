@@ -16,11 +16,11 @@ generic-array = { version = "1.1", features = ["compat-0_14"] }
 typenum = "1.14" # earlier versions of typenum don't satisfy the 'static bound on U* types
 
 # optional dependencies
-rand_core = { version = "0.6", optional = true }
+rand_core = { version = "0.10.0-rc-2", optional = true }
 
 [features]
 std = []
-getrandom = ["rand_core/getrandom"]
+getrandom = []
 
 [package.metadata.docs.rs]
 all-features = true

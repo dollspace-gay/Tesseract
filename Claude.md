@@ -5,6 +5,10 @@ For all work in this repository, you must use the beads issue tracker.
 Use the bd command-line tool to create, manage, and close issues.
 Do not use markdown files for creating to-do lists or for tracking your work. All issues and bugs are to be tracked via bd. This software is used for encryption and decryption so you will always stringently follow best security and privacy practices in coding.
 
+## Git Workflow
+
+IMPORTANT: Do NOT use git commands (add, commit, push, etc.) unless the user explicitly instructs you to do so. The user will manage version control directly. You should only execute git commands when specifically asked by the user.
+
 bd - Dependency-Aware Issue Tracker
 
 Issues chained together like beads.

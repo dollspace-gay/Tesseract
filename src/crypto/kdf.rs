@@ -6,9 +6,11 @@ use super::KeyDerivation;
 use crate::config::CryptoConfig;
 use crate::error::{CryptorError, Result};
 use argon2::{
-    password_hash::{rand_core::OsRng as ArgonRng, SaltString},
+    password_hash::{Salt, SaltString},
     Argon2, Params,
 };
+use rand::rngs::OsRng;
+use rand_core::TryRngCore;
 use zeroize::Zeroizing;
 
 /// Argon2id key derivation function.
@@ -70,7 +72,11 @@ impl KeyDerivation for Argon2Kdf {
     }
 
     fn generate_salt(&self) -> Vec<u8> {
-        let salt = SaltString::generate(&mut ArgonRng);
+        let mut bytes = [0u8; Salt::RECOMMENDED_LENGTH];
+        OsRng.try_fill_bytes(&mut bytes)
+            .expect("Failed to generate random salt bytes");
+        let salt = SaltString::encode_b64(&bytes)
+            .expect("Failed to encode salt");
         salt.as_str().as_bytes().to_vec()
     }
 }
@@ -79,7 +85,11 @@ impl KeyDerivation for Argon2Kdf {
 ///
 /// This is a convenience function for generating salts in the proper format.
 pub fn generate_salt_string() -> SaltString {
-    SaltString::generate(&mut ArgonRng)
+    let mut bytes = [0u8; Salt::RECOMMENDED_LENGTH];
+    OsRng.try_fill_bytes(&mut bytes)
+        .expect("Failed to generate random salt bytes");
+    SaltString::encode_b64(&bytes)
+        .expect("Failed to encode salt")
 }
 
 #[cfg(test)]

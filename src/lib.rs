@@ -45,8 +45,8 @@ pub use error::{CryptorError, Result};
 pub use progress::{format_bytes, format_duration, ProgressCallback, ProgressReporter, ProgressTracker};
 pub use validation::{get_and_validate_password, get_password, validate_password};
 
-use argon2::password_hash::rand_core::OsRng as ArgonRng;
-use rand_core::RngCore;
+use rand::rngs::OsRng;
+use rand_core::TryRngCore;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
@@ -96,7 +96,8 @@ pub fn encrypt_file(input_path: &Path, output_path: &Path, password: &str) -> Re
 
     // Generate base nonce for chunk nonce derivation
     let mut base_nonce = [0u8; NONCE_LEN];
-    ArgonRng.fill_bytes(&mut base_nonce);
+    OsRng.try_fill_bytes(&mut base_nonce)
+        .map_err(|e| CryptorError::Cryptography(format!("RNG error: {}", e)))?;
 
     // Open input file for chunked reading
     let config = StreamConfig::default();
@@ -256,7 +257,8 @@ pub fn encrypt_bytes(plaintext: &[u8], password: &str) -> Result<(Vec<u8>, Vec<u
 
     let encryptor = AesGcmEncryptor::new();
     let mut nonce = vec![0u8; encryptor.nonce_len()];
-    ArgonRng.fill_bytes(&mut nonce);
+    OsRng.try_fill_bytes(&mut nonce)
+        .map_err(|e| CryptorError::Cryptography(format!("RNG error: {}", e)))?;
 
     let ciphertext = encryptor.encrypt(&key, &nonce, plaintext)?;
 

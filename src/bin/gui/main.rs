@@ -1284,7 +1284,8 @@ fn encrypt_file(
     password: &str,
     use_compression: bool,
 ) -> Result<String, Box<dyn std::error::Error>> {
-    use argon2::password_hash::rand_core::{OsRng, RngCore};
+    use rand::rngs::OsRng;
+    use rand_core::TryRngCore;
 
     let input = PathBuf::from(input_path);
     let output = PathBuf::from(output_path);
@@ -1300,7 +1301,8 @@ fn encrypt_file(
     let key = kdf.derive_key(password.as_bytes(), &salt)?;
 
     let mut base_nonce = [0u8; 12];
-    OsRng.fill_bytes(&mut base_nonce);
+    OsRng.try_fill_bytes(&mut base_nonce)
+        .map_err(|e| format!("RNG error: {}", e))?;
 
     let encryptor = ChunkedEncryptor::new(
         reader,

@@ -46,7 +46,8 @@ pub use bytes;
 
 #[cfg(feature = "getrandom")]
 #[cfg_attr(docsrs, doc(cfg(feature = "getrandom")))]
-pub use crypto_common::rand_core::OsRng;
+// Note: OsRng moved in rand_core 0.10 - import from rand crate instead
+// pub use crypto_common::rand_core::OsRng;
 
 #[cfg(feature = "heapless")]
 #[cfg_attr(docsrs, doc(cfg(feature = "heapless")))]
