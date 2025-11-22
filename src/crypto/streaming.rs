@@ -113,7 +113,7 @@ impl StreamConfig {
     ///
     /// Returns an error if chunk size is out of valid range.
     pub fn new(chunk_size: usize) -> Result<Self> {
-        if chunk_size < MIN_CHUNK_SIZE || chunk_size > MAX_CHUNK_SIZE {
+        if !(MIN_CHUNK_SIZE..=MAX_CHUNK_SIZE).contains(&chunk_size) {
             return Err(CryptorError::Cryptography(format!(
                 "Chunk size {} is out of range [{}, {}]",
                 chunk_size, MIN_CHUNK_SIZE, MAX_CHUNK_SIZE
@@ -540,7 +540,7 @@ impl StreamHeader {
     /// Calculates the number of chunks needed for a given file size.
     pub fn calculate_chunks(file_size: u64, chunk_size: u32) -> u64 {
         let chunk_size = chunk_size as u64;
-        (file_size + chunk_size - 1) / chunk_size
+        file_size.div_ceil(chunk_size)
     }
 
     /// Writes the header to a writer.
@@ -1105,7 +1105,7 @@ impl ChunkedEncryptor {
         // Write header
         self.header.write_to(writer)?;
 
-        let batch_size = batch_size.unwrap_or_else(|| rayon::current_num_threads());
+        let batch_size = batch_size.unwrap_or_else(rayon::current_num_threads);
         let compress = self.compress;
 
         // Process chunks in batches
@@ -1400,7 +1400,7 @@ impl<R: Read> ChunkedDecryptor<R> {
         writer: &mut W,
         batch_size: Option<usize>,
     ) -> Result<()> {
-        let batch_size = batch_size.unwrap_or_else(|| rayon::current_num_threads());
+        let batch_size = batch_size.unwrap_or_else(rayon::current_num_threads);
         let compressed = self.header.compressed;
 
         // Process chunks in batches

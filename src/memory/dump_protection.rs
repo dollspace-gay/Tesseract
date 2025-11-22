@@ -183,6 +183,7 @@ impl PowerStateMonitor {
     }
 
     /// Invoke the callback (called internally when power event detected)
+    #[allow(dead_code)]
     fn invoke_callback(&mut self) {
         if let Some(ref mut cb) = self.callback {
             cb();

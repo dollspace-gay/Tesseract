@@ -682,7 +682,7 @@ impl Container {
 
         let mut fs = InMemoryFilesystem::new();
         fs.init(master_key, &self.path)
-            .map_err(|e| ContainerError::Io(io::Error::new(io::ErrorKind::Other, e.to_string())))?;
+            .map_err(|e| ContainerError::Io(io::Error::other(e.to_string())))?;
 
         Ok(fs)
     }
@@ -690,7 +690,7 @@ impl Container {
     /// Writes updated key slots to disk
     fn write_keyslots(&mut self) -> Result<()> {
         let file = self.file.as_mut()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Container file not open"))?;
+            .ok_or_else(|| io::Error::other("Container file not open"))?;
 
         // Seek to key slots position (fixed offset in new layout)
         file.seek(SeekFrom::Start(KEYSLOTS_OFFSET))?;
@@ -755,7 +755,7 @@ impl Container {
         // Encrypt the backup
         let cipher = Aes256Gcm::new_from_slice(&key[..])
             .map_err(|e| ContainerError::Other(format!("Cipher creation failed: {}", e)))?;
-        let nonce = Nonce::from_slice(&nonce_bytes).clone();
+        let nonce = *Nonce::from_slice(&nonce_bytes);
         let ciphertext = cipher.encrypt(&nonce, backup_data.as_ref())
             .map_err(|e| ContainerError::Other(format!("Encryption failed: {}", e)))?;
 
@@ -835,7 +835,7 @@ impl Container {
         // Decrypt the backup
         let cipher = Aes256Gcm::new_from_slice(&key[..])
             .map_err(|e| ContainerError::Other(format!("Cipher creation failed: {}", e)))?;
-        let nonce = Nonce::from_slice(&nonce_bytes).clone();
+        let nonce = *Nonce::from_slice(&nonce_bytes);
         let plaintext = cipher.decrypt(&nonce, ciphertext.as_ref())
             .map_err(|_| ContainerError::Other("Decryption failed: incorrect password or corrupted backup".to_string()))?;
 
@@ -888,7 +888,7 @@ impl Container {
             return Err(ContainerError::Other("Invalid header: bad IV size".to_string()));
         }
 
-        if self.header.sector_size() == 0 || self.header.sector_size() % 512 != 0 {
+        if self.header.sector_size() == 0 || !self.header.sector_size().is_multiple_of(512) {
             return Err(ContainerError::Other("Invalid header: bad sector size".to_string()));
         }
 

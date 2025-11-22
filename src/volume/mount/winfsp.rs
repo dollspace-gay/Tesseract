@@ -58,7 +58,7 @@ impl Drop for WinFspMountHandle {
 pub fn mount(
     container_path: impl AsRef<Path>,
     password: &str,
-    options: MountOptions,
+    _options: MountOptions,
 ) -> Result<WinFspMountHandle> {
     // Open container
     let _container = Container::open(container_path, password)?;

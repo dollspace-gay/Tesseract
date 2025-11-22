@@ -37,6 +37,9 @@ pub mod volume;
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
 
+#[cfg(not(target_arch = "wasm32"))]
+pub mod hsm;
+
 // Re-export commonly used types
 pub use config::{CryptoConfig, MAGIC_BYTES, NONCE_LEN};
 pub use crypto::aes_gcm::AesGcmEncryptor;
@@ -124,7 +127,7 @@ pub fn encrypt_file(input_path: &Path, output_path: &Path, password: &str) -> Re
     storage::write_atomically(output_path, |file| {
         chunked_encryptor
             .encrypt_to(file)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+            .map_err(|e| std::io::Error::other(e.to_string()))
     })?;
 
     Ok(())
@@ -196,10 +199,10 @@ pub fn decrypt_file(input_path: &Path, output_path: &Path, password: &str) -> Re
     file.read_exact(&mut magic_buf)?;
 
     // Check which format version
-    if &magic_buf == MAGIC_BYTES_V3 {
+    if magic_buf == MAGIC_BYTES_V3 {
         // V3 format: Use streaming decryption with NIST-compliant nonces
         decrypt_file_v3(input_path, output_path, password)
-    } else if &magic_buf == MAGIC_BYTES {
+    } else if magic_buf == MAGIC_BYTES {
         // V1 format: Use legacy in-memory decryption
         // Reset file to beginning for v1 parsing
         use std::io::Seek;
@@ -249,7 +252,7 @@ fn decrypt_file_v3(input_path: &Path, output_path: &Path, password: &str) -> Res
     storage::write_atomically(output_path, |output_file| {
         chunked_decryptor
             .decrypt_to(output_file)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+            .map_err(|e| std::io::Error::other(e.to_string()))
     })?;
 
     Ok(())

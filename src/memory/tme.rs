@@ -133,8 +133,8 @@ impl TmeInfo {
                 // Get TME capabilities from CPUID.(EAX=1DH, ECX=0)
                 if let Some(tme_caps) = cpuid(0x1D, 0) {
                     let enabled = (tme_caps.eax & 0x1) != 0;
-                    let key_bits = ((tme_caps.ebx >> 0) & 0xFFFF) as u32;
-                    let version = ((tme_caps.eax >> 1) & 0x7F) as u32;
+                    let key_bits = tme_caps.ebx & 0xFFFF;
+                    let version = (tme_caps.eax >> 1) & 0x7F;
 
                     return Some(Self {
                         version,

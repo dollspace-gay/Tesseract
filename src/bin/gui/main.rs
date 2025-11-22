@@ -1459,13 +1459,12 @@ impl eframe::App for CryptorApp {
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
-                    if self.tray_manager.is_some() {
-                        if ui.button("Minimize to Tray").clicked() {
+                    if self.tray_manager.is_some()
+                        && ui.button("Minimize to Tray").clicked() {
                             self.window_visible = false;
                             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
                             ui.close_menu();
                         }
-                    }
                     if ui.button("Exit").clicked() {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
@@ -1929,6 +1928,7 @@ fn decrypt_file(
 }
 
 /// Parse size string (e.g., "100M", "1G") into bytes
+#[cfg(feature = "encrypted-volumes")]
 fn parse_size(size_str: &str) -> Result<u64, Box<dyn std::error::Error>> {
     let size_str = size_str.trim().to_uppercase();
 

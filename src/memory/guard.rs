@@ -135,7 +135,7 @@ impl GuardedAllocation {
 
         // Calculate data region size (data + canaries), rounded up to page boundary
         let data_region_size = CANARY_SIZE + size + CANARY_SIZE;
-        let data_region_pages = (data_region_size + PAGE_SIZE - 1) / PAGE_SIZE;
+        let data_region_pages = data_region_size.div_ceil(PAGE_SIZE);
         let data_region_aligned = data_region_pages * PAGE_SIZE;
 
         // Calculate total size: front guard page + data region (page-aligned) + back guard page

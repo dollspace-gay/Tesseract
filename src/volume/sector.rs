@@ -92,7 +92,7 @@ impl SectorCipher {
     /// the master key using HKDF to ensure proper key separation.
     pub fn new(master_key: &MasterKey, sector_size: usize) -> Result<Self> {
         // Validate sector size (must be multiple of AES block size)
-        if sector_size % 16 != 0 {
+        if !sector_size.is_multiple_of(16) {
             return Err(SectorError::InvalidSectorSize(sector_size));
         }
 
@@ -230,7 +230,7 @@ impl SectorCipher {
     ///
     /// Returns an error if data size is not a multiple of sector_size
     pub fn encrypt_sectors(&self, start_sector: u64, data: &[u8]) -> Result<Vec<u8>> {
-        if data.len() % self.sector_size != 0 {
+        if !data.len().is_multiple_of(self.sector_size) {
             return Err(SectorError::SizeMismatch {
                 expected: self.sector_size,
                 actual: data.len(),
@@ -266,7 +266,7 @@ impl SectorCipher {
     ///
     /// Returns an error if data size is not a multiple of sector_size
     pub fn decrypt_sectors(&self, start_sector: u64, data: &[u8]) -> Result<Vec<u8>> {
-        if data.len() % self.sector_size != 0 {
+        if !data.len().is_multiple_of(self.sector_size) {
             return Err(SectorError::SizeMismatch {
                 expected: self.sector_size,
                 actual: data.len(),

@@ -494,8 +494,7 @@ impl PqVolumeMetadata {
     /// Returns an error if serialization fails
     pub fn to_json_bytes(&self) -> Result<Vec<u8>, HeaderError> {
         serde_json::to_vec(self)
-            .map_err(|e| HeaderError::Serialization(bincode::Error::from(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            .map_err(|e| HeaderError::Serialization(bincode::Error::from(std::io::Error::other(
                 e.to_string()
             ))))
     }
@@ -515,8 +514,7 @@ impl PqVolumeMetadata {
     /// Returns an error if deserialization fails
     pub fn from_json_bytes(bytes: &[u8]) -> Result<Self, HeaderError> {
         serde_json::from_slice(bytes)
-            .map_err(|e| HeaderError::Serialization(bincode::Error::from(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            .map_err(|e| HeaderError::Serialization(bincode::Error::from(std::io::Error::other(
                 e.to_string()
             ))))
     }

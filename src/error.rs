@@ -47,6 +47,18 @@ pub enum CryptorError {
     /// Output file path is invalid.
     #[error("Output file path is invalid.")]
     InvalidOutputPath,
+
+    /// Key derivation error.
+    #[error("Key derivation error: {0}")]
+    KeyDerivation(String),
+
+    /// Invalid input data.
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
+
+    /// Hardware security module error.
+    #[error("Hardware security module error: {0}")]
+    HardwareError(String),
 }
 
 /// Manual implementation to handle the non-standard error type from argon2.

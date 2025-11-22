@@ -23,6 +23,9 @@ wasm-full = ["post-quantum", "compression"]  # All features (default)
 post-quantum = ["dep:ml-kem", "dep:ml-dsa", "dep:rand09", "dep:chacha20"]  # Include ML-KEM-1024 and ML-DSA post-quantum cryptography
 compression = ["dep:flate2"]  # Include DEFLATE compression support
 
+# Hardware Security Module support
+yubikey = ["dep:hidapi", "dep:sha1", "dep:hmac"]  # YubiKey HMAC-SHA1 challenge-response via USB HID
+
 [lib]
 name = "secure_cryptor"
 path = "src/lib.rs"
@@ -88,6 +91,12 @@ tempfile = "3.23"
 eframe = "0.29"
 rfd = "0.15"
 tokio = { version = "1", features = ["full"] }
+
+# Hardware Security Module support
+# Direct USB HID implementation for YubiKey
+hidapi = { version = "2.6", optional = true }
+sha1 = { version = "0.10", optional = true }
+hmac = { version = "0.12", optional = true }
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["memoryapi", "winnt", "debugapi", "processthreadsapi", "winbase"] }

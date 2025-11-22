@@ -323,7 +323,7 @@ fn handle_volume_command(cmd: VolumeCommands) -> Result<(), CryptorError> {
                 ))?;
             println!("✓ Volume unmounted.");
         }
-        VolumeCommands::Unmount { path } => {
+        VolumeCommands::Unmount { path: _path } => {
             // This is a placeholder - in a real implementation, we'd need a daemon
             // or persistent state to track mounts across processes
             println!("Note: Unmount requires a running volume manager daemon.");
@@ -558,8 +558,8 @@ fn handle_volume_command(cmd: VolumeCommands) -> Result<(), CryptorError> {
                 ))?;
 
             // Mount the hidden volume
-            let mut manager = VolumeManager::new();
-            let options = MountOptions {
+            let _manager = VolumeManager::new();
+            let _options = MountOptions {
                 mount_point: mount_point.clone(),
                 read_only,
                 allow_other: false,
@@ -644,7 +644,9 @@ fn handle_volume_command(cmd: VolumeCommands) -> Result<(), CryptorError> {
                 "created_timestamp": timestamp,
             });
 
-            fs::write(&keypair_path, serde_json::to_string_pretty(&keypair_data)?)
+            let json_str = serde_json::to_string_pretty(&keypair_data)
+                .map_err(|e| CryptorError::Io(std::io::Error::other(e)))?;
+            fs::write(&keypair_path, json_str)
                 .map_err(|e| CryptorError::Io(e))?;
 
             println!();

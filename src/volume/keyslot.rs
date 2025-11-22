@@ -111,7 +111,7 @@ impl KeySlot {
         let cipher = Aes256Gcm::new_from_slice(&derived_key[..])
             .map_err(|e| KeySlotError::EncryptionError(e.to_string()))?;
 
-        let nonce = Nonce::from_slice(&nonce_bytes).clone();
+        let nonce = *Nonce::from_slice(&nonce_bytes);
         let ciphertext = cipher
             .encrypt(&nonce, master_key.as_bytes())
             .map_err(|e| KeySlotError::EncryptionError(e.to_string()))?;
@@ -142,7 +142,7 @@ impl KeySlot {
         let cipher = Aes256Gcm::new_from_slice(&derived_key[..])
             .map_err(|e| KeySlotError::EncryptionError(e.to_string()))?;
 
-        let nonce = Nonce::from_slice(&self.nonce).clone();
+        let nonce = *Nonce::from_slice(&self.nonce);
         let plaintext = cipher
             .decrypt(&nonce, self.encrypted_master_key.as_ref())
             .map_err(|_| KeySlotError::DecryptionFailed)?;
@@ -183,7 +183,7 @@ impl KeySlot {
         let cipher = Aes256Gcm::new_from_slice(derived_key)
             .map_err(|e| KeySlotError::EncryptionError(e.to_string()))?;
 
-        let nonce = Nonce::from_slice(&nonce_bytes).clone();
+        let nonce = *Nonce::from_slice(&nonce_bytes);
         let ciphertext = cipher
             .encrypt(&nonce, master_key.as_bytes())
             .map_err(|e| KeySlotError::EncryptionError(e.to_string()))?;
@@ -225,7 +225,7 @@ impl KeySlot {
         let cipher = Aes256Gcm::new_from_slice(derived_key)
             .map_err(|e| KeySlotError::EncryptionError(e.to_string()))?;
 
-        let nonce = Nonce::from_slice(&self.nonce).clone();
+        let nonce = *Nonce::from_slice(&self.nonce);
         let plaintext = cipher
             .decrypt(&nonce, self.encrypted_master_key.as_ref())
             .map_err(|_| KeySlotError::DecryptionFailed)?;
