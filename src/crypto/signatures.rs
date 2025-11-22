@@ -8,7 +8,7 @@ use ml_dsa::{KeyGen, MlDsa44, MlDsa65, MlDsa87};
 use zeroize::Zeroizing;
 
 // Import signature traits from ml_dsa re-exports
-use ml_dsa::signature::{Keypair, Signer, Verifier};
+use ml_dsa::signature::{Signer, Verifier};
 
 /// ML-DSA security levels.
 ///
@@ -61,7 +61,7 @@ impl MlDsaKeyPair {
 
         // Generate a random 32-byte seed using the system RNG
         let mut seed = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut seed);
+        rand::rng().fill_bytes(&mut seed);
 
         match level {
             SecurityLevel::Level44 => {

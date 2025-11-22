@@ -100,8 +100,8 @@ impl KeySlot {
         // Generate random salt and nonce
         let mut salt = [0u8; 32];
         let mut nonce_bytes = [0u8; 12];
-        rand::thread_rng().fill_bytes(&mut salt);
-        rand::thread_rng().fill_bytes(&mut nonce_bytes);
+        rand::rng().fill_bytes(&mut salt);
+        rand::rng().fill_bytes(&mut nonce_bytes);
 
         // Derive key from password
         let kdf = Argon2Kdf::new(CryptoConfig::default());
@@ -176,8 +176,8 @@ impl KeySlot {
         // We still store a salt for format compatibility
         let mut salt = [0u8; 32];
         let mut nonce_bytes = [0u8; 12];
-        rand::thread_rng().fill_bytes(&mut salt);
-        rand::thread_rng().fill_bytes(&mut nonce_bytes);
+        rand::rng().fill_bytes(&mut salt);
+        rand::rng().fill_bytes(&mut nonce_bytes);
 
         // Encrypt the master key with the pre-derived key
         let cipher = Aes256Gcm::new_from_slice(derived_key)
@@ -474,7 +474,7 @@ impl MasterKey {
     /// Generates a new random master key
     pub fn generate() -> Self {
         let mut key = [0u8; MASTER_KEY_SIZE];
-        rand::thread_rng().fill_bytes(&mut key);
+        rand::rng().fill_bytes(&mut key);
         Self { key }
     }
 

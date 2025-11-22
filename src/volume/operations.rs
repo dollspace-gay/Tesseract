@@ -159,7 +159,7 @@ impl InMemoryFilesystem {
 
         // Generate random nonce
         let mut nonce_bytes = [0u8; 12];
-        rand::thread_rng().fill_bytes(&mut nonce_bytes);
+        rand::rng().fill_bytes(&mut nonce_bytes);
 
         let cipher = Aes256Gcm::new_from_slice(key.as_bytes())
             .map_err(|e| FilesystemError::CryptoError(e.to_string()))?;

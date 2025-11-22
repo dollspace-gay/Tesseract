@@ -112,7 +112,7 @@ impl MlKemKeyPair {
         let ct_array: &[u8; CIPHERTEXT_SIZE] = ciphertext
             .try_into()
             .map_err(|_| CryptorError::Cryptography("Invalid ciphertext size".to_string()))?;
-        let ct = Ciphertext::<MlKem1024>::clone_from_slice(ct_array);
+        let ct = Ciphertext::<MlKem1024>::from(*ct_array);
 
         // Decapsulate the shared secret (never fails - returns Result<_, Infallible>)
         let ss = dk.decapsulate(&ct).expect("Decapsulation is infallible");
@@ -282,7 +282,7 @@ pub fn decapsulate(
     // Use type alias to simplify
     type DK = <MlKem1024 as KemCore>::DecapsulationKey;
     let dk = DK::from_bytes(dk_array.into());
-    let ct = Ciphertext::<MlKem1024>::clone_from_slice(ct_array);
+    let ct = Ciphertext::<MlKem1024>::from(*ct_array);
 
     // Decapsulate to get shared secret (never fails - returns Result<_, Infallible>)
     let ss = dk.decapsulate(&ct).expect("Decapsulation is infallible");

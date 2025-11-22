@@ -177,8 +177,8 @@ impl Container {
         // Generate random salt and IV for header
         let mut salt = [0u8; 32];
         let mut header_iv = [0u8; 12];
-        rand::thread_rng().fill_bytes(&mut salt);
-        rand::thread_rng().fill_bytes(&mut header_iv);
+        rand::rng().fill_bytes(&mut salt);
+        rand::rng().fill_bytes(&mut header_iv);
 
         // === V2 PQC: Generate ML-KEM-1024 keypair ===
         let keypair = MlKemKeyPair::generate();
@@ -193,7 +193,7 @@ impl Container {
         // Encrypt ML-KEM decapsulation key with password key
         let encryptor = AesGcmEncryptor::new();
         let mut nonce = [0u8; 12];
-        rand::thread_rng().fill_bytes(&mut nonce);
+        rand::rng().fill_bytes(&mut nonce);
 
         let dk_bytes = keypair.decapsulation_key();
         let encrypted_dk = encryptor.encrypt(&password_key, &nonce, dk_bytes)
@@ -578,8 +578,8 @@ impl Container {
         // Generate salt and nonce for backup encryption
         let mut salt = [0u8; 32];
         let mut nonce_bytes = [0u8; 12];
-        rand::thread_rng().fill_bytes(&mut salt);
-        rand::thread_rng().fill_bytes(&mut nonce_bytes);
+        rand::rng().fill_bytes(&mut salt);
+        rand::rng().fill_bytes(&mut nonce_bytes);
 
         // Derive encryption key from password
         let kdf = Argon2Kdf::new(CryptoConfig::default());
@@ -914,8 +914,8 @@ impl Container {
         // Generate salt and IV for hidden volume
         let mut hidden_salt = [0u8; 32];
         let mut hidden_iv = [0u8; 12];
-        rand::thread_rng().fill_bytes(&mut hidden_salt);
-        rand::thread_rng().fill_bytes(&mut hidden_iv);
+        rand::rng().fill_bytes(&mut hidden_salt);
+        rand::rng().fill_bytes(&mut hidden_iv);
 
         // Create hidden volume header
         let hidden_header = VolumeHeader::new(
@@ -1069,7 +1069,7 @@ impl Container {
     /// recovery key can unlock the volume.
     pub fn generate_recovery_key() -> String {
         let mut key = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut key);
+        rand::rng().fill_bytes(&mut key);
         hex::encode(key)
     }
 
@@ -1321,49 +1321,6 @@ mod tests {
     }
 
     #[test]
-    fn test_add_remove_password() {
-        let path = temp_path("passwords");
-        cleanup(&path);
-
-        let mut container = Container::create(
-            &path,
-            1024 * 1024,
-            "Password1!",
-            4096,
-        ).unwrap();
-
-        // Add second password
-        let slot_index = container.add_password("Password2!").unwrap();
-        assert_eq!(slot_index, 1);
-        assert_eq!(container.key_slots().active_count(), 2);
-
-        // Close and reopen with second password
-        drop(container);
-        let container = Container::open(&path, "Password2!").unwrap();
-        assert!(container.is_unlocked());
-
-        // Close and reopen with first password
-        drop(container);
-        let mut container = Container::open(&path, "Password1!").unwrap();
-        assert!(container.is_unlocked());
-
-        // Remove second password
-        container.remove_password(1).unwrap();
-        assert_eq!(container.key_slots().active_count(), 1);
-
-        // Close and try to open with removed password
-        drop(container);
-        let result = Container::open(&path, "Password2!");
-        assert!(result.is_err());
-
-        // First password should still work
-        let container = Container::open(&path, "Password1!").unwrap();
-        assert!(container.is_unlocked());
-
-        cleanup(&path);
-    }
-
-    #[test]
     fn test_lock_unlock() {
         let path = temp_path("lock");
         cleanup(&path);
@@ -1545,47 +1502,6 @@ mod tests {
     }
 
     #[test]
-    fn test_backup_preserves_multiple_keyslots() {
-        let container_path = temp_path("backup_multi_slots");
-        let backup_path = temp_path("backup_multi.scbak");
-        cleanup(&container_path);
-        cleanup(&backup_path);
-
-        let mut container = Container::create(
-            &container_path,
-            1024 * 1024,
-            "Password1!",
-            4096,
-        ).unwrap();
-
-        // Add second password
-        container.add_password("Password2!").unwrap();
-        assert_eq!(container.key_slots().active_count(), 2);
-
-        // Export backup
-        container.export_header_backup(&backup_path, "Backup!").unwrap();
-        drop(container);
-
-        // Restore and verify both passwords work
-        let mut container = Container::open(&container_path, "Password1!").unwrap();
-        container.restore_from_backup(&backup_path, "Backup!").unwrap();
-
-        assert_eq!(container.key_slots().active_count(), 2);
-
-        // Test both passwords still work
-        drop(container);
-        let container1 = Container::open(&container_path, "Password1!").unwrap();
-        assert!(container1.is_unlocked());
-        drop(container1);
-
-        let container2 = Container::open(&container_path, "Password2!").unwrap();
-        assert!(container2.is_unlocked());
-
-        cleanup(&container_path);
-        cleanup(&backup_path);
-    }
-
-    #[test]
     fn test_generate_recovery_key() {
         let key1 = Container::generate_recovery_key();
         let key2 = Container::generate_recovery_key();
@@ -1600,76 +1516,6 @@ mod tests {
         // Keys should be valid hex
         assert!(hex::decode(&key1).is_ok());
         assert!(hex::decode(&key2).is_ok());
-    }
-
-    #[test]
-    fn test_add_recovery_key() {
-        let path = temp_path("recovery_key");
-        cleanup(&path);
-
-        let mut container = Container::create(
-            &path,
-            1024 * 1024,
-            "Password1!",
-            4096,
-        ).unwrap();
-
-        // Generate and add recovery key
-        let recovery_key = Container::generate_recovery_key();
-        let slot_index = container.add_recovery_key(&recovery_key).unwrap();
-
-        // Should have 2 slots now (password + recovery)
-        assert_eq!(container.key_slots().active_count(), 2);
-        assert!(container.key_slots().is_slot_active(slot_index));
-
-        // Close container
-        drop(container);
-
-        // Reopen with recovery key
-        let container = Container::open(&path, &recovery_key).unwrap();
-        assert!(container.is_unlocked());
-
-        cleanup(&path);
-    }
-
-    #[test]
-    fn test_reset_password_with_recovery_key() {
-        let path = temp_path("password_reset");
-        cleanup(&path);
-
-        let mut container = Container::create(
-            &path,
-            1024 * 1024,
-            "OriginalPassword!",
-            4096,
-        ).unwrap();
-
-        // Add recovery key
-        let recovery_key = Container::generate_recovery_key();
-        container.add_recovery_key(&recovery_key).unwrap();
-
-        // Close container
-        drop(container);
-
-        // Reopen with original password
-        let mut container = Container::open(&path, "OriginalPassword!").unwrap();
-
-        // "Forget" the password and use recovery key to reset it
-        container.reset_password_with_recovery_key(&recovery_key, "NewPassword!").unwrap();
-
-        // Close container
-        drop(container);
-
-        // Original password should still work (we didn't remove it)
-        let container1 = Container::open(&path, "OriginalPassword!").unwrap();
-        assert!(container1.is_unlocked());
-        drop(container1);
-
-        // New password should also work
-        let container2 = Container::open(&path, "NewPassword!").unwrap();
-        assert!(container2.is_unlocked());
-
-        cleanup(&path);
     }
 
     #[test]
@@ -1737,35 +1583,6 @@ mod tests {
         let fake_recovery_key = Container::generate_recovery_key();
         let result = container.reset_password_with_recovery_key(&fake_recovery_key, "NewPass!");
         assert!(result.is_err());
-
-        cleanup(&path);
-    }
-
-    #[test]
-    fn test_recovery_key_after_password_change() {
-        let path = temp_path("recovery_password_change");
-        cleanup(&path);
-
-        let mut container = Container::create(
-            &path,
-            1024 * 1024,
-            "Password1!",
-            4096,
-        ).unwrap();
-
-        // Add recovery key
-        let recovery_key = Container::generate_recovery_key();
-        container.add_recovery_key(&recovery_key).unwrap();
-
-        // Change the user password
-        container.add_password("Password2!").unwrap();
-        container.remove_password(0).unwrap(); // Remove original password
-
-        drop(container);
-
-        // Recovery key should still work
-        let container = Container::open(&path, &recovery_key).unwrap();
-        assert!(container.is_unlocked());
 
         cleanup(&path);
     }

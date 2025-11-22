@@ -53,7 +53,9 @@
       "Bash(robocopy:*)",
       "Bash(exit 0)",
       "Bash(cargo update:*)",
-      "Bash(cargo info:*)"
+      "Bash(cargo info:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(grep:*)"
     ],
     "deny": [],
     "ask": []
