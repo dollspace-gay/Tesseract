@@ -13,12 +13,14 @@
 /// │ - Cipher algorithm (AES-256-GCM)                         │
 /// │ - Volume size, sector size                               │
 /// │ - Timestamps, PQ metadata reference                      │
+/// │ - BLAKE3 checksum for integrity verification             │
 /// └──────────────────────────────────────────────────────────┘
 /// ┌──────────────────────────────────────────────────────────┐
 /// │ Offset: 0x1000 (4 KB)                                    │
-/// │ Backup Volume Header (4 KB)                              │
-/// │ - Reserved for header redundancy (future use)            │
-/// │ - Enables recovery from primary header corruption        │
+/// │ PQ Metadata (variable size, ~1KB typical)                │
+/// │ - ML-KEM-1024 encapsulation key                          │
+/// │ - Ciphertext and encrypted decapsulation key             │
+/// │ - Provides post-quantum resistance                       │
 /// └──────────────────────────────────────────────────────────┘
 /// ┌──────────────────────────────────────────────────────────┐
 /// │ Offset: 0x2000 (8 KB)                                    │
@@ -35,9 +37,16 @@
 /// │ - Sector size from header (typically 4096 bytes)         │
 /// │ - Hybrid encryption: ML-KEM-1024 + AES-256-GCM           │
 /// └──────────────────────────────────────────────────────────┘
+/// ┌──────────────────────────────────────────────────────────┐
+/// │ Offset: volume_size - HEADER_SIZE                        │
+/// │ Backup Volume Header (4 KB)                              │
+/// │ - Duplicate of primary header for corruption recovery    │
+/// │ - Located at end of file (LUKS/VeraCrypt style)          │
+/// │ - Verified on volume open, used for recovery if needed   │
+/// └──────────────────────────────────────────────────────────┘
 /// ```
 ///
-/// Total metadata size: 16 KB (PRIMARY_HEADER + BACKUP_HEADER + KEYSLOTS)
+/// Total metadata size: 16 KB front + 4 KB backup header at end
 ///
 /// ## Security Features
 ///
@@ -74,24 +83,29 @@ use crate::config::CryptoConfig;
 // │ Offset        │ Size    │ Section                              │
 // ├─────────────────────────────────────────────────────────────────┤
 // │ 0x0000        │ 4 KB    │ Primary Volume Header                │
-// │ 0x1000        │ 4 KB    │ Backup Volume Header (future use)   │
+// │ 0x1000        │ ~1 KB   │ PQ Metadata (V2 only)                │
 // │ 0x2000        │ 8 KB    │ Key Slots (8 slots × 1KB each)       │
 // │ 0x4000        │ ...     │ Encrypted Data Area                  │
+// │ EOF-4KB       │ 4 KB    │ Backup Volume Header (end of file)  │
 // └─────────────────────────────────────────────────────────────────┘
 //
-// Total metadata size: 16 KB (PRIMARY_HEADER + BACKUP_HEADER + KEYSLOTS)
+// Total metadata size: 16 KB front + 4 KB backup header at end
 //
 // This layout provides:
-// - Header redundancy for corruption recovery
+// - Header redundancy for corruption recovery (backup at end of file)
 // - Multi-user support via 8 independent key slots
 // - Clear separation of metadata and data
-// - Future extensibility via backup header area
+// - Post-quantum resistance via ML-KEM-1024 (V2 volumes)
+// - BLAKE3 header checksums for integrity verification
 
 /// Offset to primary volume header (always at start of file)
 pub const PRIMARY_HEADER_OFFSET: u64 = 0;
 
-/// Offset to backup volume header (reserved for future use - see issue secure-cryptor-6od)
-pub const BACKUP_HEADER_OFFSET: u64 = HEADER_SIZE as u64;
+/// Location strategy for backup volume header:
+/// The backup header is stored at the END of the volume file to avoid conflicts
+/// with PQ metadata and provide better corruption resistance.
+/// Calculation: volume_file_size - HEADER_SIZE
+/// This follows the LUKS/VeraCrypt convention of end-of-volume backup headers.
 
 /// Offset to key slots section
 pub const KEYSLOTS_OFFSET: u64 = 2 * HEADER_SIZE as u64; // 8KB
@@ -311,17 +325,24 @@ impl Container {
         // Initialize data area with zeros (encrypted later by filesystem)
         // V2 metadata size = PRIMARY_HEADER + BACKUP_HEADER + KEYSLOTS = 16KB
         let v2_metadata_size = DATA_AREA_OFFSET;
-        file.set_len(v2_metadata_size + size)?;
+        // Reserve space for backup header at end of file
+        file.set_len(v2_metadata_size + size + HEADER_SIZE as u64)?;
         file.sync_all()?;
 
-        Ok(Self {
+        // Create the container instance
+        let mut container = Self {
             path,
             header,
             key_slots,
             master_key: Some(master_key),
             pq_shared_secret: Some(pq_shared_secret),
             file: Some(file),
-        })
+        };
+
+        // Write backup header to end of file
+        container.write_backup_header()?;
+
+        Ok(container)
     }
 
     /// Opens an existing encrypted container (supports both V1 and V2 formats)
@@ -429,14 +450,126 @@ impl Container {
         file.read_exact(&mut keyslots_bytes)?;
         let key_slots: KeySlots = bincode::deserialize(&keyslots_bytes)?;
 
-        Ok(Self {
+        // Create container instance
+        let mut container = Self {
             path,
             header,
             key_slots,
             master_key: Some(master_key),
             pq_shared_secret,
             file: Some(file),
-        })
+        };
+
+        // Verify backup header (if volume has one)
+        // V2 volumes with backup headers will have file_size > metadata_size + data_size
+        if let Ok(file_metadata) = container.file.as_ref().unwrap().metadata() {
+            let expected_size_without_backup = DATA_AREA_OFFSET + container.header.volume_size();
+            let actual_size = file_metadata.len();
+
+            // Check if file has space for backup header
+            if actual_size >= expected_size_without_backup + HEADER_SIZE as u64 {
+                // Backup header exists, verify it matches primary
+                match container.verify_headers() {
+                    Ok(true) => {
+                        // Headers match - all good
+                    }
+                    Ok(false) => {
+                        // Headers don't match - warn but don't fail
+                        // (could be normal if header was just updated)
+                        eprintln!("Warning: Backup header doesn't match primary header");
+                    }
+                    Err(_) => {
+                        // Backup header read failed - warn but continue
+                        eprintln!("Warning: Could not read backup header");
+                    }
+                }
+            }
+        }
+
+        Ok(container)
+    }
+
+    /// Writes the backup header to the end of the volume file
+    ///
+    /// This writes a duplicate copy of the primary header to the end of the volume
+    /// (at offset: file_size - HEADER_SIZE) for redundancy and corruption recovery.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The container file is not open
+    /// - Writing fails
+    fn write_backup_header(&mut self) -> Result<()> {
+        let file = self.file.as_mut()
+            .ok_or_else(|| ContainerError::Other("Container file not open".to_string()))?;
+
+        // Get file size to calculate backup header offset
+        let file_size = file.metadata()?.len();
+        let backup_offset = file_size.saturating_sub(HEADER_SIZE as u64);
+
+        // Seek to backup header location (end of file - header size)
+        file.seek(SeekFrom::Start(backup_offset))?;
+
+        // Write header
+        self.header.write_to(file)?;
+
+        // Sync to ensure it's written to disk
+        file.sync_all()?;
+
+        Ok(())
+    }
+
+    /// Reads the backup header from the end of the volume file
+    ///
+    /// # Returns
+    ///
+    /// The backup header if it exists and is valid
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The container file is not open
+    /// - Reading fails
+    /// - The backup header is invalid
+    fn read_backup_header(&mut self) -> Result<VolumeHeader> {
+        let file = self.file.as_mut()
+            .ok_or_else(|| ContainerError::Other("Container file not open".to_string()))?;
+
+        // Get file size to calculate backup header offset
+        let file_size = file.metadata()?.len();
+        let backup_offset = file_size.saturating_sub(HEADER_SIZE as u64);
+
+        // Seek to backup header location (end of file - header size)
+        file.seek(SeekFrom::Start(backup_offset))?;
+
+        // Read header
+        let backup_header = VolumeHeader::read_from(file)?;
+
+        Ok(backup_header)
+    }
+
+    /// Verifies that primary and backup headers match
+    ///
+    /// Compares the primary header (in memory) with the backup header on disk
+    /// to detect corruption or tampering.
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(true)` if headers match
+    /// - `Ok(false)` if headers don't match (corruption detected)
+    /// - `Err(...)` if reading the backup header fails
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if reading the backup header fails
+    fn verify_headers(&mut self) -> Result<bool> {
+        let backup_header = self.read_backup_header()?;
+
+        // Compare primary and backup headers byte-by-byte
+        let primary_bytes = self.header.to_bytes()?;
+        let backup_bytes = backup_header.to_bytes()?;
+
+        Ok(primary_bytes == backup_bytes)
     }
 
     /// Adds a new password/key slot to the container

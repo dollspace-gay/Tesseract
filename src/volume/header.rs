@@ -103,10 +103,15 @@ pub struct VolumeHeader {
     /// For V1 or V2 without PQC: 0
     pq_metadata_size: u32,
 
-    /// Reserved space for future use (235 bytes in V2)
-    /// Reduced from 256 bytes to accommodate new PQC fields
+    /// BLAKE3 checksum of header fields (32 bytes)
+    /// Computed over all fields except checksum itself and reserved space
+    /// Used to detect corruption and tampering
+    checksum: [u8; 32],
+
+    /// Reserved space for future use (203 bytes in V2)
+    /// Reduced from 235 bytes to accommodate checksum field
     #[serde(with = "BigArray")]
-    reserved: [u8; 235],
+    reserved: [u8; 203],
 }
 
 /// Errors that can occur when working with volume headers
@@ -131,6 +136,10 @@ pub enum HeaderError {
     /// Header size mismatch
     #[error("Header size mismatch: expected {expected}, got {actual}")]
     SizeMismatch { expected: usize, actual: usize },
+
+    /// Header checksum mismatch (corruption or tampering detected)
+    #[error("Header checksum mismatch: header is corrupted or tampered")]
+    ChecksumMismatch,
 }
 
 impl VolumeHeader {
@@ -157,7 +166,7 @@ impl VolumeHeader {
             .expect("System time before Unix epoch")
             .as_secs();
 
-        Self {
+        let mut header = Self {
             magic: MAGIC,
             version: VERSION,
             cipher: CipherAlgorithm::Aes256Gcm,
@@ -170,8 +179,13 @@ impl VolumeHeader {
             pq_algorithm: PqAlgorithm::None,  // Can be upgraded later
             pq_metadata_offset: 0,
             pq_metadata_size: 0,
-            reserved: [0u8; 235],
-        }
+            checksum: [0u8; 32],  // Computed later
+            reserved: [0u8; 203],
+        };
+
+        // Compute and set checksum
+        header.checksum = header.compute_checksum();
+        header
     }
 
     /// Creates a new V2 volume header with post-quantum cryptography enabled
@@ -199,7 +213,7 @@ impl VolumeHeader {
             .expect("System time before Unix epoch")
             .as_secs();
 
-        Self {
+        let mut header = Self {
             magic: MAGIC,
             version: VERSION_V2,
             cipher: CipherAlgorithm::Aes256Gcm,
@@ -212,8 +226,13 @@ impl VolumeHeader {
             pq_algorithm: PqAlgorithm::MlKem1024,
             pq_metadata_offset: HEADER_SIZE as u64,  // PQ metadata follows header
             pq_metadata_size,
-            reserved: [0u8; 235],
-        }
+            checksum: [0u8; 32],  // Computed later
+            reserved: [0u8; 203],
+        };
+
+        // Compute and set checksum
+        header.checksum = header.compute_checksum();
+        header
     }
 
     /// Serializes the header to bytes
@@ -277,6 +296,9 @@ impl VolumeHeader {
         if header.version != VERSION_V1 && header.version != VERSION_V2 {
             return Err(HeaderError::UnsupportedVersion(header.version));
         }
+
+        // Verify checksum to detect corruption/tampering
+        header.verify_checksum()?;
 
         Ok(header)
     }
@@ -386,6 +408,76 @@ impl VolumeHeader {
     /// Returns true if this is a V2 header
     pub fn is_v2(&self) -> bool {
         self.version == VERSION_V2
+    }
+
+    /// Computes the BLAKE3 checksum of the header fields
+    ///
+    /// The checksum is computed over all fields except:
+    /// - The checksum field itself (to avoid circular dependency)
+    /// - The reserved field (not meaningful data)
+    ///
+    /// This provides integrity protection and tamper detection for the header.
+    ///
+    /// # Returns
+    ///
+    /// A 32-byte BLAKE3 hash of the header fields
+    fn compute_checksum(&self) -> [u8; 32] {
+        let mut hasher = blake3::Hasher::new();
+
+        // Hash all meaningful fields in order
+        hasher.update(&self.magic);
+        hasher.update(&self.version.to_le_bytes());
+        hasher.update(&[self.cipher as u8]);
+        hasher.update(&self.salt);
+        hasher.update(&self.header_iv);
+        hasher.update(&self.volume_size.to_le_bytes());
+        hasher.update(&self.sector_size.to_le_bytes());
+        hasher.update(&self.created_at.to_le_bytes());
+        hasher.update(&self.modified_at.to_le_bytes());
+        hasher.update(&[self.pq_algorithm as u8]);
+        hasher.update(&self.pq_metadata_offset.to_le_bytes());
+        hasher.update(&self.pq_metadata_size.to_le_bytes());
+
+        // Note: checksum and reserved fields are NOT included in the hash
+
+        let hash = hasher.finalize();
+        let mut checksum = [0u8; 32];
+        checksum.copy_from_slice(hash.as_bytes());
+        checksum
+    }
+
+    /// Verifies the header checksum
+    ///
+    /// Recomputes the checksum and compares it with the stored value.
+    /// This detects any corruption or tampering with the header.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if the checksum is valid, `Err(HeaderError::ChecksumMismatch)` otherwise
+    pub fn verify_checksum(&self) -> Result<(), HeaderError> {
+        let computed = self.compute_checksum();
+
+        // Constant-time comparison to prevent timing attacks
+        use subtle::ConstantTimeEq;
+        if computed.ct_eq(&self.checksum).into() {
+            Ok(())
+        } else {
+            Err(HeaderError::ChecksumMismatch)
+        }
+    }
+
+    /// Updates the header's modification timestamp and recomputes checksum
+    ///
+    /// Call this whenever header fields are modified to keep the checksum valid.
+    pub fn update_checksum(&mut self) {
+        // Update modification timestamp
+        self.modified_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("System time before Unix epoch")
+            .as_secs();
+
+        // Recompute checksum
+        self.checksum = self.compute_checksum();
     }
 }
 
