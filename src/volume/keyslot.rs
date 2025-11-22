@@ -154,6 +154,89 @@ impl KeySlot {
         Ok(MasterKey { key })
     }
 
+    /// Creates a new active key slot using a pre-derived key (for V2 PQC hybrid encryption)
+    ///
+    /// This method is used when the key has already been derived (e.g., hybrid password + PQ key).
+    /// It skips the Argon2 derivation step and uses the provided key directly.
+    ///
+    /// # Arguments
+    ///
+    /// * `master_key` - The master key to encrypt
+    /// * `derived_key` - Pre-derived 32-byte encryption key (e.g., hybrid key)
+    ///
+    /// # Returns
+    ///
+    /// A new active KeySlot
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if encryption fails
+    fn new_with_derived_key(master_key: &MasterKey, derived_key: &[u8; 32]) -> Result<Self, KeySlotError> {
+        // Generate random salt (stored but not used for derivation since key is pre-derived)
+        // We still store a salt for format compatibility
+        let mut salt = [0u8; 32];
+        let mut nonce_bytes = [0u8; 12];
+        rand::thread_rng().fill_bytes(&mut salt);
+        rand::thread_rng().fill_bytes(&mut nonce_bytes);
+
+        // Encrypt the master key with the pre-derived key
+        let cipher = Aes256Gcm::new_from_slice(derived_key)
+            .map_err(|e| KeySlotError::EncryptionError(e.to_string()))?;
+
+        let nonce = Nonce::from_slice(&nonce_bytes).clone();
+        let ciphertext = cipher
+            .encrypt(&nonce, master_key.as_bytes())
+            .map_err(|e| KeySlotError::EncryptionError(e.to_string()))?;
+
+        // Copy encrypted key to fixed-size array
+        let mut encrypted_master_key = [0u8; ENCRYPTED_KEY_SIZE];
+        encrypted_master_key.copy_from_slice(&ciphertext);
+
+        Ok(Self {
+            active: true,
+            salt,
+            nonce: nonce_bytes,
+            encrypted_master_key,
+        })
+    }
+
+    /// Attempts to unlock this slot with a pre-derived key (for V2 PQC hybrid encryption)
+    ///
+    /// This method is used when the key has already been derived (e.g., hybrid password + PQ key).
+    /// It skips the Argon2 derivation step and uses the provided key directly.
+    ///
+    /// # Arguments
+    ///
+    /// * `derived_key` - Pre-derived 32-byte decryption key (e.g., hybrid key)
+    ///
+    /// # Returns
+    ///
+    /// The decrypted master key
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the slot is inactive or decryption fails
+    fn unlock_with_derived_key(&self, derived_key: &[u8; 32]) -> Result<MasterKey, KeySlotError> {
+        if !self.active {
+            return Err(KeySlotError::DecryptionFailed);
+        }
+
+        // Attempt to decrypt the master key with the pre-derived key
+        let cipher = Aes256Gcm::new_from_slice(derived_key)
+            .map_err(|e| KeySlotError::EncryptionError(e.to_string()))?;
+
+        let nonce = Nonce::from_slice(&self.nonce).clone();
+        let plaintext = cipher
+            .decrypt(&nonce, self.encrypted_master_key.as_ref())
+            .map_err(|_| KeySlotError::DecryptionFailed)?;
+
+        // Convert to MasterKey
+        let mut key = [0u8; MASTER_KEY_SIZE];
+        key.copy_from_slice(&plaintext);
+
+        Ok(MasterKey { key })
+    }
+
     /// Returns whether this slot is active
     pub fn is_active(&self) -> bool {
         self.active
@@ -211,6 +294,35 @@ impl KeySlots {
         Err(KeySlotError::AllSlotsFull)
     }
 
+    /// Adds a new key slot with a pre-derived key (for V2 PQC hybrid encryption)
+    ///
+    /// This method is used for V2 volumes with PQC, where the key is derived from
+    /// both the password and ML-KEM shared secret.
+    ///
+    /// # Arguments
+    ///
+    /// * `master_key` - The master key to encrypt in this slot
+    /// * `derived_key` - Pre-derived 32-byte hybrid encryption key
+    ///
+    /// # Returns
+    ///
+    /// The index of the newly created slot
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if all slots are full
+    pub fn add_slot_with_derived_key(&mut self, master_key: &MasterKey, derived_key: &[u8; 32]) -> Result<usize, KeySlotError> {
+        // Find first inactive slot
+        for (i, slot) in self.slots.iter_mut().enumerate() {
+            if !slot.active {
+                *slot = KeySlot::new_with_derived_key(master_key, derived_key)?;
+                return Ok(i);
+            }
+        }
+
+        Err(KeySlotError::AllSlotsFull)
+    }
+
     /// Removes a key slot by index
     ///
     /// # Arguments
@@ -247,6 +359,36 @@ impl KeySlots {
         for slot in &self.slots {
             if slot.active {
                 if let Ok(master_key) = slot.unlock(password) {
+                    return Ok(master_key);
+                }
+            }
+        }
+
+        // No slot could be unlocked
+        Err(KeySlotError::DecryptionFailed)
+    }
+
+    /// Attempts to unlock the volume with a pre-derived key by trying all active slots
+    ///
+    /// This is used for V2 PQC volumes where the key has already been derived
+    /// from the password and PQ shared secret.
+    ///
+    /// # Arguments
+    ///
+    /// * `derived_key` - The pre-derived hybrid key (32 bytes)
+    ///
+    /// # Returns
+    ///
+    /// The decrypted master key if any slot matches
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no slots can be unlocked with this key
+    pub fn unlock_with_derived_key(&self, derived_key: &[u8; 32]) -> Result<MasterKey, KeySlotError> {
+        // Try each active slot
+        for slot in &self.slots {
+            if slot.active {
+                if let Ok(master_key) = slot.unlock_with_derived_key(derived_key) {
                     return Ok(master_key);
                 }
             }

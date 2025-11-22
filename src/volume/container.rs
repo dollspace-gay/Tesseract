@@ -42,9 +42,16 @@ use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use rand::RngCore;
 use thiserror::Error;
+use zeroize::Zeroizing;
 
-use super::header::{VolumeHeader, HEADER_SIZE};
+use super::header::{VolumeHeader, PqVolumeMetadata, HEADER_SIZE};
 use super::keyslot::{KeySlots, MasterKey};
+use crate::crypto::pqc::{MlKemKeyPair, encapsulate};
+use crate::crypto::streaming::{derive_hybrid_key};
+use crate::crypto::kdf::Argon2Kdf;
+use crate::crypto::{KeyDerivation, Encryptor};
+use crate::crypto::aes_gcm::AesGcmEncryptor;
+use crate::config::CryptoConfig;
 
 /// Size of the key slots section in bytes (4KB aligned)
 pub const KEYSLOTS_SIZE: usize = 4096;
@@ -108,12 +115,15 @@ pub struct Container {
     /// Master encryption key (only available when unlocked)
     master_key: Option<MasterKey>,
 
+    /// PQ shared secret (V2 volumes only, available when unlocked)
+    pq_shared_secret: Option<Zeroizing<[u8; 32]>>,
+
     /// File handle (kept open while container is in use)
     file: Option<File>,
 }
 
 impl Container {
-    /// Creates a new encrypted container file
+    /// Creates a new encrypted container file with V2 PQC support
     ///
     /// # Arguments
     ///
@@ -125,6 +135,13 @@ impl Container {
     /// # Returns
     ///
     /// A new `Container` instance with the master key unlocked
+    ///
+    /// # Security
+    ///
+    /// This creates a V2 volume with ML-KEM-1024 post-quantum hybrid encryption:
+    /// - Master key is protected by hybrid key = HKDF(password_key || pq_shared_secret)
+    /// - ML-KEM decapsulation key is encrypted with password_key
+    /// - Provides quantum resistance via defense-in-depth
     ///
     /// # Errors
     ///
@@ -163,12 +180,58 @@ impl Container {
         rand::thread_rng().fill_bytes(&mut salt);
         rand::thread_rng().fill_bytes(&mut header_iv);
 
-        // Create volume header
-        let header = VolumeHeader::new(size, sector_size, salt, header_iv);
+        // === V2 PQC: Generate ML-KEM-1024 keypair ===
+        let keypair = MlKemKeyPair::generate();
+        let (ciphertext, pq_shared_secret) = encapsulate(keypair.encapsulation_key())
+            .map_err(|e| ContainerError::Other(format!("ML-KEM encapsulation failed: {}", e)))?;
 
-        // Create key slots and add first password
+        // Derive password key via Argon2
+        let kdf = Argon2Kdf::new(CryptoConfig::default());
+        let password_key = Zeroizing::new(kdf.derive_key(password.as_bytes(), &salt)
+            .map_err(|e| ContainerError::Other(format!("Key derivation failed: {}", e)))?);
+
+        // Encrypt ML-KEM decapsulation key with password key
+        let encryptor = AesGcmEncryptor::new();
+        let mut nonce = [0u8; 12];
+        rand::thread_rng().fill_bytes(&mut nonce);
+
+        let dk_bytes = keypair.decapsulation_key();
+        let encrypted_dk = encryptor.encrypt(&password_key, &nonce, dk_bytes)
+            .map_err(|e| ContainerError::Other(format!("DK encryption failed: {}", e)))?;
+
+        // Combine nonce + encrypted_dk for storage (matches streaming.rs format)
+        let mut encrypted_dk_with_nonce = Vec::with_capacity(12 + encrypted_dk.len());
+        encrypted_dk_with_nonce.extend_from_slice(&nonce);
+        encrypted_dk_with_nonce.extend_from_slice(&encrypted_dk);
+
+        // Create PQ metadata
+        use base64::Engine;
+        let pq_metadata = PqVolumeMetadata {
+            algorithm: super::header::PqAlgorithm::MlKem1024,
+            encapsulation_key: base64::engine::general_purpose::STANDARD.encode(keypair.encapsulation_key()),
+            ciphertext: base64::engine::general_purpose::STANDARD.encode(&ciphertext),
+            encrypted_decapsulation_key: base64::engine::general_purpose::STANDARD.encode(&encrypted_dk_with_nonce),
+        };
+
+        // Serialize PQ metadata to get size
+        let pq_metadata_bytes = pq_metadata.to_json_bytes()?;
+        let pq_metadata_size = pq_metadata_bytes.len() as u32;
+
+        // Derive hybrid key: password_key + pq_shared_secret
+        let hybrid_key = derive_hybrid_key(&password_key, &pq_shared_secret);
+
+        // Create V2 volume header with PQ metadata
+        let header = VolumeHeader::new_with_pqc(
+            size,
+            sector_size,
+            salt,
+            header_iv,
+            pq_metadata_size,
+        );
+
+        // Create key slots and add first password using hybrid key
         let mut key_slots = KeySlots::new();
-        key_slots.add_slot(&master_key, password)?;
+        key_slots.add_slot_with_derived_key(&master_key, &hybrid_key)?;
 
         // Create the container file
         let mut file = OpenOptions::new()
@@ -180,6 +243,10 @@ impl Container {
         // Write header
         header.write_to(&mut file)?;
 
+        // Write PQ metadata immediately after header
+        pq_metadata.write_to(&mut file)?;
+
+        // Key slots written immediately after PQ metadata (no padding needed)
         // Serialize and write key slots
         let keyslots_bytes = bincode::serialize(&key_slots)?;
         if keyslots_bytes.len() > KEYSLOTS_SIZE {
@@ -196,8 +263,9 @@ impl Container {
         file.write_all(&padded_keyslots)?;
 
         // Initialize data area with zeros (encrypted later by filesystem)
-        // We'll just set the file size for now
-        file.set_len(METADATA_SIZE as u64 + size)?;
+        // V2 metadata size = HEADER + PQ_METADATA + KEYSLOTS
+        let v2_metadata_size = HEADER_SIZE as u64 + pq_metadata_size as u64 + KEYSLOTS_SIZE as u64;
+        file.set_len(v2_metadata_size + size)?;
         file.sync_all()?;
 
         Ok(Self {
@@ -205,11 +273,12 @@ impl Container {
             header,
             key_slots,
             master_key: Some(master_key),
+            pq_shared_secret: Some(pq_shared_secret),
             file: Some(file),
         })
     }
 
-    /// Opens an existing encrypted container
+    /// Opens an existing encrypted container (supports both V1 and V2 formats)
     ///
     /// # Arguments
     ///
@@ -219,6 +288,12 @@ impl Container {
     /// # Returns
     ///
     /// A `Container` instance with the master key unlocked
+    ///
+    /// # Security
+    ///
+    /// - V1 volumes: Uses password-based key derivation (Argon2id)
+    /// - V2 volumes: Uses hybrid key = HKDF(password_key || pq_shared_secret)
+    ///   providing post-quantum resistance via ML-KEM-1024
     ///
     /// # Errors
     ///
@@ -239,19 +314,87 @@ impl Container {
         // Read header
         let header = VolumeHeader::read_from(&mut file)?;
 
-        // Read key slots
+        // Determine master key and PQ shared secret based on header version
+        let (master_key, pq_shared_secret) = if header.has_pqc() {
+            // === V2 PQC: Derive hybrid key ===
+
+            // Read PQ metadata
+            let pq_metadata = PqVolumeMetadata::read_from(&mut file, header.pq_metadata_size())?;
+
+            // Derive password key via Argon2
+            let kdf = Argon2Kdf::new(CryptoConfig::default());
+            let password_key = Zeroizing::new(kdf.derive_key(password.as_bytes(), header.salt())
+                .map_err(|e| ContainerError::Other(format!("Key derivation failed: {}", e)))?);
+
+            // Decrypt ML-KEM decapsulation key with password key
+            use base64::Engine;
+            let encrypted_dk = base64::engine::general_purpose::STANDARD.decode(&pq_metadata.encrypted_decapsulation_key)
+                .map_err(|e| ContainerError::Other(format!("Base64 decode failed: {}", e)))?;
+
+            let encryptor = AesGcmEncryptor::new();
+            // Extract nonce from encrypted data (first 12 bytes)
+            if encrypted_dk.len() < 12 {
+                return Err(ContainerError::Other("Invalid encrypted DK size".to_string()));
+            }
+            let nonce = &encrypted_dk[0..12];
+            let ciphertext = &encrypted_dk[12..];
+
+            let dk_bytes = encryptor.decrypt(&password_key, nonce, ciphertext)
+                .map_err(|_| ContainerError::KeySlot(super::keyslot::KeySlotError::DecryptionFailed))?;
+
+            // Decapsulate to get PQ shared secret
+            let ciphertext_bytes = base64::engine::general_purpose::STANDARD.decode(&pq_metadata.ciphertext)
+                .map_err(|e| ContainerError::Other(format!("Base64 decode failed: {}", e)))?;
+
+            let pq_shared_secret = crate::crypto::pqc::decapsulate(&dk_bytes, &ciphertext_bytes)
+                .map_err(|e| ContainerError::Other(format!("ML-KEM decapsulation failed: {}", e)))?;
+
+            // Derive hybrid key
+            let hybrid_key = derive_hybrid_key(&password_key, &pq_shared_secret);
+
+            // Seek to key slots position (after PQ metadata)
+            file.seek(SeekFrom::Start(header.pq_metadata_offset() + header.pq_metadata_size() as u64))?;
+
+            // Read key slots
+            let mut keyslots_bytes = vec![0u8; KEYSLOTS_SIZE];
+            file.read_exact(&mut keyslots_bytes)?;
+            let key_slots: KeySlots = bincode::deserialize(&keyslots_bytes)?;
+
+            // Unlock with hybrid key
+            let master_key = key_slots.unlock_with_derived_key(&hybrid_key)?;
+            (master_key, Some(pq_shared_secret))
+        } else {
+            // === V1 Classical: Password-based unlock ===
+
+            // Read key slots (immediately after header in V1)
+            let mut keyslots_bytes = vec![0u8; KEYSLOTS_SIZE];
+            file.read_exact(&mut keyslots_bytes)?;
+            let key_slots: KeySlots = bincode::deserialize(&keyslots_bytes)?;
+
+            // Unlock with password
+            let master_key = key_slots.unlock(password)?;
+            (master_key, None)
+        };
+
+        // Re-read key slots for storage in Container struct
+        // Calculate key slots offset based on header version
+        let keyslots_offset = if header.has_pqc() {
+            HEADER_SIZE as u64 + header.pq_metadata_size() as u64
+        } else {
+            HEADER_SIZE as u64
+        };
+
+        file.seek(SeekFrom::Start(keyslots_offset))?;
         let mut keyslots_bytes = vec![0u8; KEYSLOTS_SIZE];
         file.read_exact(&mut keyslots_bytes)?;
         let key_slots: KeySlots = bincode::deserialize(&keyslots_bytes)?;
-
-        // Unlock with password
-        let master_key = key_slots.unlock(password)?;
 
         Ok(Self {
             path,
             header,
             key_slots,
             master_key: Some(master_key),
+            pq_shared_secret,
             file: Some(file),
         })
     }
@@ -265,11 +408,34 @@ impl Container {
     /// # Errors
     ///
     /// Returns an error if all key slots are full or if the container is locked
+    ///
+    /// # Security
+    ///
+    /// - V1 volumes: Password-based key derivation via Argon2id
+    /// - V2 volumes: Hybrid key derivation (password + PQ shared secret)
     pub fn add_password(&mut self, password: &str) -> Result<usize> {
         let master_key = self.master_key.as_ref()
             .ok_or_else(|| super::keyslot::KeySlotError::NoActiveSlots)?;
 
-        let slot_index = self.key_slots.add_slot(master_key, password)?;
+        let slot_index = if self.header.has_pqc() {
+            // === V2 PQC: Use hybrid key ===
+            let pq_shared_secret = self.pq_shared_secret.as_ref()
+                .ok_or_else(|| ContainerError::Other("PQ shared secret not available".to_string()))?;
+
+            // Derive password key via Argon2
+            let kdf = Argon2Kdf::new(CryptoConfig::default());
+            let password_key = Zeroizing::new(kdf.derive_key(password.as_bytes(), self.header.salt())
+                .map_err(|e| ContainerError::Other(format!("Key derivation failed: {}", e)))?);
+
+            // Derive hybrid key
+            let hybrid_key = derive_hybrid_key(&password_key, pq_shared_secret);
+
+            // Add slot with hybrid key
+            self.key_slots.add_slot_with_derived_key(master_key, &hybrid_key)?
+        } else {
+            // === V1 Classical: Password-based ===
+            self.key_slots.add_slot(master_key, password)?
+        };
 
         // Write updated key slots to disk
         self.write_keyslots()?;
@@ -353,8 +519,15 @@ impl Container {
         let file = self.file.as_mut()
             .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Container file not open"))?;
 
+        // Calculate key slots offset based on header version
+        let keyslots_offset = if self.header.has_pqc() {
+            HEADER_SIZE as u64 + self.header.pq_metadata_size() as u64
+        } else {
+            HEADER_SIZE as u64
+        };
+
         // Seek to key slots position
-        file.seek(SeekFrom::Start(HEADER_SIZE as u64))?;
+        file.seek(SeekFrom::Start(keyslots_offset))?;
 
         // Serialize and write
         let keyslots_bytes = bincode::serialize(&self.key_slots)?;
@@ -561,9 +734,10 @@ impl Container {
         Ok(())
     }
 
-    /// Locks the container (clears master key and closes file)
+    /// Locks the container (clears master key, PQ shared secret, and closes file)
     pub fn lock(&mut self) {
         self.master_key = None;
+        self.pq_shared_secret = None;
         self.file = None;
     }
 
@@ -613,24 +787,37 @@ impl Container {
             )));
         }
 
+        // Calculate new total size using actual metadata size (V1 or V2)
+        let metadata_size = self.metadata_size();
+        let new_total_size = metadata_size + new_size;
+
         // Get file handle
         let file = self.file.as_mut()
             .ok_or_else(|| ContainerError::Other("Container file not open".to_string()))?;
-
-        // Calculate new total size
-        let new_total_size = METADATA_SIZE as u64 + new_size;
 
         // Resize the file
         file.set_len(new_total_size)?;
         file.sync_all()?;
 
-        // Update header with new volume size
-        self.header = VolumeHeader::new(
-            new_size,
-            sector_size,
-            *self.header.salt(),
-            *self.header.header_iv(),
-        );
+        // Update header with new volume size, preserving V2 PQC metadata if present
+        if self.header.has_pqc() {
+            // V2: preserve PQC settings
+            self.header = VolumeHeader::new_with_pqc(
+                new_size,
+                sector_size,
+                *self.header.salt(),
+                *self.header.header_iv(),
+                self.header.pq_metadata_size(),
+            );
+        } else {
+            // V1: classical header
+            self.header = VolumeHeader::new(
+                new_size,
+                sector_size,
+                *self.header.salt(),
+                *self.header.header_iv(),
+            );
+        }
 
         // Write updated header
         file.seek(SeekFrom::Start(0))?;
@@ -645,9 +832,18 @@ impl Container {
         self.header.volume_size()
     }
 
+    /// Returns the actual metadata size (header + PQ metadata + keyslots)
+    pub fn metadata_size(&self) -> u64 {
+        if self.header.has_pqc() {
+            HEADER_SIZE as u64 + self.header.pq_metadata_size() as u64 + KEYSLOTS_SIZE as u64
+        } else {
+            METADATA_SIZE as u64
+        }
+    }
+
     /// Returns the total file size in bytes (including metadata)
     pub fn total_size(&self) -> u64 {
-        METADATA_SIZE as u64 + self.header.volume_size()
+        self.metadata_size() + self.header.volume_size()
     }
 
     /// Creates a hidden volume within this container
@@ -811,11 +1007,13 @@ impl Container {
 
         // Create a Container instance for the hidden volume
         // Note: The hidden volume shares the same file as the outer volume
+        // TODO: Add PQC support for hidden volumes
         Ok(Container {
             path: self.path.clone(),
             header: hidden_header,
             key_slots: hidden_keyslots,
             master_key: Some(hidden_master_key),
+            pq_shared_secret: None,  // Hidden volumes don't support PQC yet
             file: Some(file),
         })
     }
@@ -1204,10 +1402,12 @@ mod tests {
         cleanup(&path);
 
         let data_size = 1024 * 1024;
-        Container::create(&path, data_size, "Test!", 4096).unwrap();
+        let container = Container::create(&path, data_size, "Test!", 4096).unwrap();
 
-        let metadata = fs::metadata(&path).unwrap();
-        assert_eq!(metadata.len(), METADATA_SIZE as u64 + data_size);
+        // V2 volumes have larger metadata due to PQ data
+        let fs_metadata = fs::metadata(&path).unwrap();
+        assert_eq!(fs_metadata.len(), container.total_size());
+        assert_eq!(container.size(), data_size);
 
         cleanup(&path);
     }
@@ -1584,20 +1784,21 @@ mod tests {
         ).unwrap();
 
         // Verify initial size
+        let metadata_size = container.metadata_size();
         assert_eq!(container.size(), initial_size);
-        assert_eq!(container.total_size(), METADATA_SIZE as u64 + initial_size);
+        assert_eq!(container.total_size(), metadata_size + initial_size);
 
         // Expand to 2 MB
         let new_size = 2 * 1024 * 1024;
         container.resize(new_size).unwrap();
 
-        // Verify new size
+        // Verify new size (metadata size unchanged after resize)
         assert_eq!(container.size(), new_size);
-        assert_eq!(container.total_size(), METADATA_SIZE as u64 + new_size);
+        assert_eq!(container.total_size(), metadata_size + new_size);
 
         // Verify file size on disk
-        let metadata = fs::metadata(&path).unwrap();
-        assert_eq!(metadata.len(), METADATA_SIZE as u64 + new_size);
+        let fs_metadata = fs::metadata(&path).unwrap();
+        assert_eq!(fs_metadata.len(), metadata_size + new_size);
 
         // Close and reopen to verify persistence
         drop(container);
@@ -1621,6 +1822,7 @@ mod tests {
         ).unwrap();
 
         // Shrink to 1 MB
+        let metadata_size = container.metadata_size();
         let new_size = 1024 * 1024;
         container.resize(new_size).unwrap();
 
@@ -1628,8 +1830,8 @@ mod tests {
         assert_eq!(container.size(), new_size);
 
         // Verify file size on disk
-        let metadata = fs::metadata(&path).unwrap();
-        assert_eq!(metadata.len(), METADATA_SIZE as u64 + new_size);
+        let fs_metadata = fs::metadata(&path).unwrap();
+        assert_eq!(fs_metadata.len(), metadata_size + new_size);
 
         // Close and reopen to verify persistence
         drop(container);
@@ -1694,7 +1896,7 @@ mod tests {
         ).unwrap();
 
         assert_eq!(container.size(), data_size);
-        assert_eq!(container.total_size(), METADATA_SIZE as u64 + data_size);
+        assert_eq!(container.total_size(), container.metadata_size() + data_size);
 
         cleanup(&path);
     }
