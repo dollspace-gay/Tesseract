@@ -34,6 +34,9 @@ pub mod storage;
 pub mod validation;
 pub mod volume;
 
+#[cfg(target_arch = "wasm32")]
+pub mod wasm;
+
 // Re-export commonly used types
 pub use config::{CryptoConfig, MAGIC_BYTES, NONCE_LEN};
 pub use crypto::aes_gcm::AesGcmEncryptor;
@@ -48,7 +51,9 @@ pub use memory::pool::{EncryptedAllocation, EncryptedMemoryPool, SecurityLevel};
 pub use memory::scrub::{scrub_bytes, scrub_bytes_pattern, scrub_and_verify, ScrubPattern, ScrubStats, ScrubGuard};
 pub use memory::LockedMemory;
 pub use progress::{format_bytes, format_duration, ProgressCallback, ProgressReporter, ProgressTracker};
-pub use validation::{get_and_validate_password, get_password, validate_password};
+#[cfg(not(target_arch = "wasm32"))]
+pub use validation::{get_and_validate_password, get_password};
+pub use validation::validate_password;
 
 use rand::rngs::OsRng;
 use rand_core::TryRngCore;

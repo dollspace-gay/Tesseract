@@ -4,7 +4,9 @@
 //! and securely collecting passwords from users.
 
 use crate::error::{CryptorError, Result};
+#[cfg(not(target_arch = "wasm32"))]
 use rpassword::read_password;
+#[cfg(not(target_arch = "wasm32"))]
 use std::io::Write;
 use subtle::ConstantTimeEq;
 use zeroize::Zeroizing;
@@ -34,6 +36,7 @@ pub const MIN_COMPLEXITY_SCORE: u8 = 3;
 ///
 /// - Uses zeroizing memory to prevent password leakage
 /// - Constant-time comparison to prevent timing attacks
+#[cfg(not(target_arch = "wasm32"))]
 pub fn get_and_validate_password() -> Result<Zeroizing<String>> {
     print!("Enter a strong password: ");
     std::io::stdout().flush()?;
@@ -59,6 +62,7 @@ pub fn get_and_validate_password() -> Result<Zeroizing<String>> {
 /// # Errors
 ///
 /// Returns an error if I/O error occurs during input.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn get_password() -> Result<Zeroizing<String>> {
     print!("Enter password: ");
     std::io::stdout().flush()?;

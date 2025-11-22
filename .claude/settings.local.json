@@ -55,7 +55,11 @@
       "Bash(cargo update:*)",
       "Bash(cargo info:*)",
       "Bash(cargo clippy:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(build-wasm.bat)",
+      "Bash(cmd /c build-wasm.bat)",
+      "Bash(wasm-pack:*)",
+      "Bash(dir:*)"
     ],
     "deny": [],
     "ask": []

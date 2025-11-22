@@ -7,7 +7,28 @@ use crate::error::{CryptorError, Result};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
+#[cfg(not(target_arch = "wasm32"))]
 use tempfile::Builder;
+
+// WASM stub implementations (file operations not supported in browsers)
+#[cfg(target_arch = "wasm32")]
+pub fn write_file_atomic(_path: &Path, _data: &[u8]) -> Result<()> {
+    Err(CryptorError::Io(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "File operations are not supported in WebAssembly"
+    )))
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn write_atomically<F>(_path: &Path, _write_fn: F) -> Result<()>
+where
+    F: FnOnce(&mut File) -> std::result::Result<(), std::io::Error>,
+{
+    Err(CryptorError::Io(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "File operations are not supported in WebAssembly"
+    )))
+}
 
 /// Reads the entire contents of a file into a vector.
 ///
@@ -50,6 +71,7 @@ pub fn read_file(path: &Path) -> Result<Vec<u8>> {
 /// let data = b"important data";
 /// write_file_atomic(Path::new("output.txt"), data).unwrap();
 /// ```
+#[cfg(not(target_arch = "wasm32"))]
 pub fn write_file_atomic(path: &Path, data: &[u8]) -> Result<()> {
     write_atomically(path, |file| file.write_all(data))
 }
@@ -68,6 +90,7 @@ pub fn write_file_atomic(path: &Path, data: &[u8]) -> Result<()> {
 /// # Errors
 ///
 /// Returns an error if any step of the operation fails.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn write_atomically<F>(path: &Path, write_fn: F) -> Result<()>
 where
     F: FnOnce(&mut File) -> std::result::Result<(), std::io::Error>,

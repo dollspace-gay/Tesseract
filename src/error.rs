@@ -40,6 +40,7 @@ pub enum CryptorError {
     InvalidFormat,
 
     /// Failed to persist temporary file.
+    #[cfg(not(target_arch = "wasm32"))]
     #[error("Failed to persist temporary file: {0}")]
     TempFilePersist(#[from] tempfile::PersistError),
 
