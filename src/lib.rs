@@ -28,6 +28,7 @@
 pub mod config;
 pub mod crypto;
 pub mod error;
+pub mod memory;
 pub mod progress;
 pub mod storage;
 pub mod validation;
