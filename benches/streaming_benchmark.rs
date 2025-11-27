@@ -1,16 +1,16 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use tesseract::crypto::aes_gcm::AesGcmEncryptor;
-use tesseract::crypto::streaming::{
+use tesseract_lib::crypto::aes_gcm::AesGcmEncryptor;
+use tesseract_lib::crypto::streaming::{
     ChunkedDecryptor, ChunkedEncryptor, ChunkedReader, StreamConfig, MIN_CHUNK_SIZE,
 };
-use tesseract::encrypt_file;
+use tesseract_lib::encrypt_file;
 use std::io::Write;
 use tempfile::NamedTempFile;
 use zeroize::Zeroizing;
 
 use rand::rngs::OsRng;
 use rand_core::TryRngCore;
-use tesseract::config::NONCE_LEN;
+use tesseract_lib::config::NONCE_LEN;
 
 /// Creates a temporary file with random data of the specified size.
 fn create_test_file(size: usize) -> NamedTempFile {

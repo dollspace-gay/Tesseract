@@ -1,8 +1,8 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
-use tesseract::crypto::pqc::{MlKemKeyPair, encapsulate};
-use tesseract::crypto::kdf::Argon2Kdf;
-use tesseract::crypto::{Encryptor, KeyDerivation};
-use tesseract::SecureAllocator;
+use tesseract_lib::crypto::pqc::{MlKemKeyPair, encapsulate};
+use tesseract_lib::crypto::kdf::Argon2Kdf;
+use tesseract_lib::crypto::{Encryptor, KeyDerivation};
+use tesseract_lib::SecureAllocator;
 use std::alloc::{GlobalAlloc, Layout};
 
 fn bench_ml_kem_keypair_generation(c: &mut Criterion) {
@@ -250,7 +250,7 @@ fn bench_pqc_data_sizes(c: &mut Criterion) {
 }
 
 fn bench_volume_header_pqc(c: &mut Criterion) {
-    use tesseract::volume::header::{VolumeHeader, PqVolumeMetadata, PqAlgorithm, PQ_METADATA_SIZE};
+    use tesseract_lib::volume::header::{VolumeHeader, PqVolumeMetadata, PqAlgorithm, PQ_METADATA_SIZE};
 
     let mut group = c.benchmark_group("volume_header_pqc");
 

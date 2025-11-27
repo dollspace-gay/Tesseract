@@ -2,7 +2,7 @@
 //!
 //! Long-running background service for managing encrypted volume mounts
 
-use tesseract::daemon::DaemonServer;
+use tesseract_lib::daemon::DaemonServer;
 
 fn main() {
     println!("Starting Secure Cryptor Daemon...");

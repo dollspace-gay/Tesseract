@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
-use tesseract::SecureAllocator;
+use tesseract_lib::SecureAllocator;
 use std::alloc::{GlobalAlloc, Layout, System};
 
 fn bench_system_allocator(c: &mut Criterion) {

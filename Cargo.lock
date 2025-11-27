@@ -7156,7 +7156,3 @@ dependencies = [
  "syn 2.0.108",
  "winnow 0.7.13",
 ]
-
-[[patch.unused]]
-name = "blake2"
-version = "0.10.6"

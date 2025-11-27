@@ -4,7 +4,7 @@
 //! with Argon2id key derivation.
 
 use clap::{Parser, Subcommand};
-use tesseract::{validation, CryptorError};
+use tesseract_lib::{validation, CryptorError};
 use std::path::PathBuf;
 
 /// Command-line interface definition
@@ -234,7 +234,7 @@ fn encrypt_file_interactive(
     output_path: &std::path::Path,
 ) -> Result<(), CryptorError> {
     let password = validation::get_and_validate_password()?;
-    tesseract::encrypt_file(input_path, output_path, &password)?;
+    tesseract_lib::encrypt_file(input_path, output_path, &password)?;
     Ok(())
 }
 
@@ -244,14 +244,14 @@ fn decrypt_file_interactive(
     output_path: &std::path::Path,
 ) -> Result<(), CryptorError> {
     let password = validation::get_password()?;
-    tesseract::decrypt_file(input_path, output_path, &password)?;
+    tesseract_lib::decrypt_file(input_path, output_path, &password)?;
     Ok(())
 }
 
 /// Handle volume subcommands
 #[cfg(feature = "encrypted-volumes")]
 fn handle_volume_command(cmd: VolumeCommands) -> Result<(), CryptorError> {
-    use tesseract::volume::{Container, VolumeManager, MountOptions};
+    use tesseract_lib::volume::{Container, VolumeManager, MountOptions};
 
     match cmd {
         VolumeCommands::Create { container, size, mount_point } => {
@@ -361,7 +361,7 @@ fn handle_volume_command(cmd: VolumeCommands) -> Result<(), CryptorError> {
             println!("✓ Volume unmounted.");
         }
         VolumeCommands::Unmount { path } => {
-            use tesseract::daemon::DaemonClient;
+            use tesseract_lib::daemon::DaemonClient;
 
             // Try to use daemon for unmount
             let client = DaemonClient::new();
@@ -391,7 +391,7 @@ fn handle_volume_command(cmd: VolumeCommands) -> Result<(), CryptorError> {
             }
         }
         VolumeCommands::List => {
-            use tesseract::daemon::DaemonClient;
+            use tesseract_lib::daemon::DaemonClient;
 
             // Try to use daemon for list
             let client = DaemonClient::new();
@@ -730,7 +730,7 @@ fn handle_volume_command(cmd: VolumeCommands) -> Result<(), CryptorError> {
             }
         }
         VolumeCommands::MigrateToPqc { container, keypair_output } => {
-            use tesseract::volume::VolumeMigration;
+            use tesseract_lib::volume::VolumeMigration;
             use std::fs;
 
             println!("Migrating volume '{}' to V2 with post-quantum cryptography", container.display());
@@ -941,7 +941,7 @@ fn handle_volume_command(_cmd: VolumeCommands) -> Result<(), CryptorError> {
 
 /// Handle daemon subcommands
 fn handle_daemon_command(cmd: DaemonCommands) -> Result<(), CryptorError> {
-    use tesseract::daemon::{DaemonServer, DaemonClient};
+    use tesseract_lib::daemon::{DaemonServer, DaemonClient};
 
     match cmd {
         DaemonCommands::Start => {
@@ -961,7 +961,7 @@ fn handle_daemon_command(cmd: DaemonCommands) -> Result<(), CryptorError> {
                 return Ok(());
             }
 
-            match client.send_command(tesseract::daemon::DaemonCommand::Shutdown) {
+            match client.send_command(tesseract_lib::daemon::DaemonCommand::Shutdown) {
                 Ok(_) => println!("✓ Daemon stopped successfully."),
                 Err(e) => {
                     return Err(CryptorError::Io(
@@ -977,9 +977,9 @@ fn handle_daemon_command(cmd: DaemonCommands) -> Result<(), CryptorError> {
                 println!("✓ Daemon is running.");
 
                 // Try to get ping response
-                match client.send_command(tesseract::daemon::DaemonCommand::Ping) {
+                match client.send_command(tesseract_lib::daemon::DaemonCommand::Ping) {
                     Ok(response) => {
-                        if let tesseract::daemon::DaemonResponse::Pong = response {
+                        if let tesseract_lib::daemon::DaemonResponse::Pong = response {
                             println!("  Status: Healthy");
                         }
                     }
@@ -994,7 +994,7 @@ fn handle_daemon_command(cmd: DaemonCommands) -> Result<(), CryptorError> {
         DaemonCommands::InstallService => {
             #[cfg(windows)]
             {
-                use tesseract::daemon::service;
+                use tesseract_lib::daemon::service;
                 service::install_service()
                     .map_err(|e| CryptorError::Io(
                         std::io::Error::other(e.to_string())
@@ -1002,7 +1002,7 @@ fn handle_daemon_command(cmd: DaemonCommands) -> Result<(), CryptorError> {
             }
             #[cfg(target_os = "linux")]
             {
-                use tesseract::daemon::service;
+                use tesseract_lib::daemon::service;
                 service::install_service()
                     .map_err(|e| CryptorError::Io(
                         std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
@@ -1010,7 +1010,7 @@ fn handle_daemon_command(cmd: DaemonCommands) -> Result<(), CryptorError> {
             }
             #[cfg(target_os = "macos")]
             {
-                use tesseract::daemon::service;
+                use tesseract_lib::daemon::service;
                 service::install_service()
                     .map_err(|e| CryptorError::Io(
                         std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
@@ -1020,7 +1020,7 @@ fn handle_daemon_command(cmd: DaemonCommands) -> Result<(), CryptorError> {
         DaemonCommands::UninstallService => {
             #[cfg(windows)]
             {
-                use tesseract::daemon::service;
+                use tesseract_lib::daemon::service;
                 service::uninstall_service()
                     .map_err(|e| CryptorError::Io(
                         std::io::Error::other(e.to_string())
@@ -1028,7 +1028,7 @@ fn handle_daemon_command(cmd: DaemonCommands) -> Result<(), CryptorError> {
             }
             #[cfg(target_os = "linux")]
             {
-                use tesseract::daemon::service;
+                use tesseract_lib::daemon::service;
                 service::uninstall_service()
                     .map_err(|e| CryptorError::Io(
                         std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
@@ -1036,7 +1036,7 @@ fn handle_daemon_command(cmd: DaemonCommands) -> Result<(), CryptorError> {
             }
             #[cfg(target_os = "macos")]
             {
-                use tesseract::daemon::service;
+                use tesseract_lib::daemon::service;
                 service::uninstall_service()
                     .map_err(|e| CryptorError::Io(
                         std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
@@ -1063,7 +1063,7 @@ fn handle_daemon_command(cmd: DaemonCommands) -> Result<(), CryptorError> {
             }
             #[cfg(target_os = "linux")]
             {
-                use tesseract::daemon::service;
+                use tesseract_lib::daemon::service;
                 service::start_service()
                     .map_err(|e| CryptorError::Io(
                         std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
@@ -1071,7 +1071,7 @@ fn handle_daemon_command(cmd: DaemonCommands) -> Result<(), CryptorError> {
             }
             #[cfg(target_os = "macos")]
             {
-                use tesseract::daemon::service;
+                use tesseract_lib::daemon::service;
                 service::load_service()
                     .map_err(|e| CryptorError::Io(
                         std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
@@ -1098,7 +1098,7 @@ fn handle_daemon_command(cmd: DaemonCommands) -> Result<(), CryptorError> {
             }
             #[cfg(target_os = "linux")]
             {
-                use tesseract::daemon::service;
+                use tesseract_lib::daemon::service;
                 service::stop_service()
                     .map_err(|e| CryptorError::Io(
                         std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
@@ -1106,7 +1106,7 @@ fn handle_daemon_command(cmd: DaemonCommands) -> Result<(), CryptorError> {
             }
             #[cfg(target_os = "macos")]
             {
-                use tesseract::daemon::service;
+                use tesseract_lib::daemon::service;
                 service::unload_service()
                     .map_err(|e| CryptorError::Io(
                         std::io::Error::new(std::io::ErrorKind::Other, e.to_string())

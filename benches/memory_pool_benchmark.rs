@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use tesseract::memory::pool::{EncryptedMemoryPool, SecurityLevel};
+use tesseract_lib::memory::pool::{EncryptedMemoryPool, SecurityLevel};
 
 /// Benchmark pool creation for different security levels.
 fn bench_pool_creation(c: &mut Criterion) {

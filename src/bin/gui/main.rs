@@ -6,7 +6,7 @@
 mod tray;
 
 use eframe::egui;
-use tesseract::{
+use tesseract_lib::{
     ChunkedDecryptor, ChunkedEncryptor, ChunkedReader, StreamConfig,
     crypto::{aes_gcm::AesGcmEncryptor, kdf::Argon2Kdf, KeyDerivation},
     validation::validate_password,
@@ -260,7 +260,7 @@ struct CryptorApp {
     #[allow(dead_code)]
     volume_status: String,
     #[allow(dead_code)]
-    mounted_volumes: Vec<tesseract::volume::MountedVolumeInfo>,
+    mounted_volumes: Vec<tesseract_lib::volume::MountedVolumeInfo>,
     #[allow(dead_code)]
     volume_info: Option<String>,
     // Duress password fields
@@ -889,7 +889,7 @@ impl CryptorApp {
 
     #[cfg(feature = "encrypted-volumes")]
     fn render_volume_ui(&mut self, ui: &mut egui::Ui) {
-        use tesseract::volume::Container;
+        use tesseract_lib::volume::Container;
 
         // Tab buttons
         ui.vertical_centered(|ui| {
@@ -1156,7 +1156,7 @@ impl CryptorApp {
 
                             #[cfg(feature = "encrypted-volumes")]
                             {
-                                use tesseract::volume::MountOptions;
+                                use tesseract_lib::volume::MountOptions;
 
                                 if let Some(ref mut manager) = self.volume_manager {
                                     let options = MountOptions {

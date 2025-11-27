@@ -27,7 +27,7 @@ compression = ["dep:flate2"]  # Include DEFLATE compression support
 yubikey = ["dep:hidapi", "dep:sha1", "dep:hmac"]  # YubiKey HMAC-SHA1 challenge-response via USB HID
 
 [lib]
-name = "tesseract"
+name = "tesseract_lib"
 path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
 
@@ -164,4 +164,3 @@ block-buffer = { path = "rustcrypto-utils-fork/block-buffer" }
 digest = { path = "rustcrypto-traits-fork/digest" }
 universal-hash = { path = "rustcrypto-traits-fork/universal-hash" }
 ctr = { path = "rustcrypto-block-modes-fork/ctr" }
-blake2 = { path = "rustcrypto-hashes-fork/blake2" }
