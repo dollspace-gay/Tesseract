@@ -17,6 +17,15 @@
 /// - **Tweakable**: Each sector uses a unique tweak (sector index)
 /// - **No Patterns**: Identical plaintext sectors at different positions produce different ciphertext
 /// - **Performance**: Fast encryption/decryption with hardware AES acceleration
+/// - **Deterministic**: Same sector index + same plaintext = same ciphertext (required for overwrite semantics)
+///
+/// ## Note on XTS vs GCM
+///
+/// XTS-AES uses **sector indices as tweaks**, NOT random nonces like GCM:
+/// - The sector index uniquely identifies each sector position on disk
+/// - This is NOT a nonce collision risk because sector indices are sequential and deterministic
+/// - XTS is specifically designed for this use case (IEEE P1619 standard)
+/// - GCM would require storing authentication tags (16 bytes per sector), expanding storage
 ///
 /// ## Note on Authentication
 ///
@@ -462,5 +471,43 @@ mod tests {
         // But not the other's ciphertext
         assert_ne!(cipher1.decrypt_sector(sector_index, &ct2).unwrap(), plaintext);
         assert_ne!(cipher2.decrypt_sector(sector_index, &ct1).unwrap(), plaintext);
+    }
+
+    /// Test that verifies sector-index-based tweaks prevent cross-sector attacks
+    ///
+    /// XTS mode uses the sector index as a "tweak" which ensures:
+    /// 1. Same plaintext at different sectors produces different ciphertext
+    /// 2. No nonce reuse issues (unlike GCM) because sector indices are deterministic
+    /// 3. Overwriting same sector is safe (same tweak = same encryption behavior)
+    #[test]
+    fn test_sector_index_tweak_security() {
+        let master_key = MasterKey::generate();
+        let cipher = SectorCipher::new(&master_key, SECTOR_SIZE_512).unwrap();
+
+        let plaintext = vec![0x55u8; SECTOR_SIZE_512];
+
+        // Security property 1: Same plaintext at different positions produces different ciphertext
+        // This prevents pattern analysis attacks
+        let ct_sector_0 = cipher.encrypt_sector(0, &plaintext).unwrap();
+        let ct_sector_1 = cipher.encrypt_sector(1, &plaintext).unwrap();
+        let ct_sector_max = cipher.encrypt_sector(u64::MAX, &plaintext).unwrap();
+
+        assert_ne!(ct_sector_0, ct_sector_1, "Same plaintext must produce different ciphertext at different sectors");
+        assert_ne!(ct_sector_0, ct_sector_max, "Sector index must affect ciphertext even for extreme values");
+
+        // Security property 2: Overwriting same sector multiple times is deterministic
+        // This is REQUIRED for disk semantics (no storage expansion)
+        let ct_overwrite_1 = cipher.encrypt_sector(42, &plaintext).unwrap();
+        let ct_overwrite_2 = cipher.encrypt_sector(42, &plaintext).unwrap();
+        assert_eq!(ct_overwrite_1, ct_overwrite_2, "Same sector index must produce identical ciphertext");
+
+        // Security property 3: All ciphertexts decrypt correctly with their sector index
+        assert_eq!(cipher.decrypt_sector(0, &ct_sector_0).unwrap(), plaintext);
+        assert_eq!(cipher.decrypt_sector(1, &ct_sector_1).unwrap(), plaintext);
+        assert_eq!(cipher.decrypt_sector(u64::MAX, &ct_sector_max).unwrap(), plaintext);
+
+        // Security property 4: Cross-sector decryption produces garbage (not original plaintext)
+        let wrong_decrypt = cipher.decrypt_sector(1, &ct_sector_0).unwrap();
+        assert_ne!(wrong_decrypt, plaintext, "Wrong sector index must not decrypt to original plaintext");
     }
 }

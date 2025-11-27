@@ -306,6 +306,17 @@ impl Container {
         let pq_metadata_bytes = pq_metadata.to_bytes()?;
         let pq_metadata_size = pq_metadata_bytes.len() as u32;
 
+        // SECURITY CHECK: Ensure PQ metadata fits in reserved space
+        // This prevents overwriting key slots if future PQ algorithms have larger keys
+        if pq_metadata_bytes.len() > PQ_METADATA_RESERVED {
+            return Err(ContainerError::InvalidSize(format!(
+                "PQ metadata ({} bytes) exceeds reserved space ({} bytes). \
+                 This may indicate an incompatible PQ algorithm or corrupted data.",
+                pq_metadata_bytes.len(),
+                PQ_METADATA_RESERVED
+            )));
+        }
+
         // Derive hybrid key: password_key + pq_shared_secret
         let hybrid_key = derive_hybrid_key(&password_key, &pq_shared_secret);
 
@@ -1651,6 +1662,29 @@ mod tests {
         assert!(result.is_err());
 
         cleanup(&path);
+    }
+
+    #[test]
+    fn test_pq_metadata_size_within_limits() {
+        // Verify that current ML-KEM-1024 PQ metadata fits within reserved space
+        use super::super::header::{PQ_METADATA_SIZE, PqVolumeMetadata, PqAlgorithm};
+
+        // Current PQ metadata size should be well under the 8KB limit
+        assert!(PQ_METADATA_SIZE < PQ_METADATA_RESERVED,
+            "PQ metadata size ({}) should be less than reserved space ({})",
+            PQ_METADATA_SIZE, PQ_METADATA_RESERVED);
+
+        // Verify actual serialization fits
+        let metadata = PqVolumeMetadata {
+            algorithm: PqAlgorithm::MlKem1024,
+            encapsulation_key: [0u8; 1568],
+            ciphertext: [0u8; 1568],
+            encrypted_decapsulation_key: [0u8; 3196],
+        };
+        let bytes = metadata.to_bytes().unwrap();
+        assert!(bytes.len() <= PQ_METADATA_RESERVED,
+            "Serialized PQ metadata ({} bytes) exceeds reserved space ({} bytes)",
+            bytes.len(), PQ_METADATA_RESERVED);
     }
 
     #[test]

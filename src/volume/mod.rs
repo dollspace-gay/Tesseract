@@ -5,6 +5,7 @@
 /// or WinFsp (Windows).
 
 pub mod automount;
+pub mod chunk;
 pub mod container;
 pub mod filesystem;
 pub mod header;
@@ -16,6 +17,7 @@ pub mod operations;
 pub mod sector;
 
 pub use automount::{AutoMountConfig, AutoMountService, AutoMountAuth, VolumeConfig, VolumeConfigBuilder};
+pub use chunk::{ChunkMapper, ChunkLocation, ChunkRange, ChunkError, DEFAULT_CHUNK_SIZE};
 pub use container::{Container, METADATA_SIZE, KEYSLOTS_SIZE};
 pub use filesystem::{EncryptedFilesystem, FileAttr, FileType, FilesystemError, DirEntry};
 pub use header::VolumeHeader;
