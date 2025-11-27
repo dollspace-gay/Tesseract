@@ -13,6 +13,12 @@ pub mod streaming;
 #[cfg(test)]
 mod pqc_tests;
 
+// Kani formal verification harnesses
+#[cfg(kani)]
+mod aes_gcm_kani;
+#[cfg(kani)]
+mod kdf_kani;
+
 use crate::error::Result;
 use zeroize::Zeroizing;
 

@@ -1,0 +1,9 @@
+{
+  "prusti.buildChannel": "nightly",
+  "prusti.checkOverflows": true,
+  "prusti.enablePureFunctions": true,
+  "prusti.encodeBitvectorSize": true,
+  "prusti.encodeUnsignedNumConstraint": true,
+  "prusti.checkPanics": true,
+  "prusti.verificationTimeout": 120000
+}

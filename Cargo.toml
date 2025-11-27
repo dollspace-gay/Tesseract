@@ -128,6 +128,8 @@ proptest = "1.5"
 criterion = "0.5"
 quickcheck = "1.0"
 wasm-bindgen-test = "0.3"
+prusti-contracts = "0.2"
+kani-verifier = "0.66"
 
 [[bench]]
 name = "streaming_benchmark"
@@ -157,4 +159,7 @@ inherits = "release"
 opt-level = 3  # Optimize for performance
 lto = true
 codegen-units = 1
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
 
