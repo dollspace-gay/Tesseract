@@ -1,8 +1,8 @@
-/// Encrypted volume management module
-///
-/// This module provides functionality for creating and managing encrypted
-/// volumes that can be mounted as filesystems using FUSE (Linux/macOS)
-/// or WinFsp (Windows).
+//! Encrypted volume management module
+//!
+//! This module provides functionality for creating and managing encrypted
+//! volumes that can be mounted as filesystems using FUSE (Linux/macOS)
+//! or WinFsp (Windows).
 
 pub mod automount;
 pub mod chunk;

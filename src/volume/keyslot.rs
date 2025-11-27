@@ -1,7 +1,7 @@
-/// Key slot system for encrypted volumes
-///
-/// Supports multiple passwords/users accessing the same volume by encrypting
-/// a master key with different user-derived keys.
+//! Key slot system for encrypted volumes
+//!
+//! Supports multiple passwords/users accessing the same volume by encrypting
+//! a master key with different user-derived keys.
 
 use crate::config::CryptoConfig;
 use crate::crypto::kdf::Argon2Kdf;

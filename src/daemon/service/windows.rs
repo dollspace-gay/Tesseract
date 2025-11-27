@@ -1,6 +1,6 @@
-/// Windows Service implementation for Tesseract daemon
-///
-/// Integrates with Windows Service Control Manager (SCM)
+//! Windows Service implementation for Tesseract daemon
+//!
+//! Integrates with Windows Service Control Manager (SCM)
 
 use std::ffi::OsString;
 use std::time::Duration;

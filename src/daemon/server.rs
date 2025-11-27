@@ -1,6 +1,6 @@
-/// Daemon server implementation
-///
-/// Manages mounted volumes and handles IPC requests
+//! Daemon server implementation
+//!
+//! Manages mounted volumes and handles IPC requests
 
 use std::collections::HashMap;
 use std::path::PathBuf;

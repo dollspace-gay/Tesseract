@@ -1,43 +1,43 @@
-/// Volume I/O Engine with LRU caching and storage backend abstraction
-///
-/// This module provides the core I/O layer for encrypted volumes. It handles:
-/// - Chunk-based read/write operations with XTS-AES encryption
-/// - LRU caching of decrypted chunks for performance
-/// - Storage backend abstraction for local files and future cloud support
-///
-/// ## Architecture
-///
-/// ```text
-/// +------------------+
-/// |   Filesystem     |  (FUSE/WinFsp)
-/// +--------+---------+
-///          |
-/// +--------v---------+
-/// |    VolumeIO      |  <- This module
-/// |  +------------+  |
-/// |  | LRU Cache  |  |  (decrypted chunks)
-/// |  +-----+------+  |
-/// |        |         |
-/// |  +-----v------+  |
-/// |  |ChunkMapper |  |  (offset translation)
-/// |  +-----+------+  |
-/// |        |         |
-/// |  +-----v------+  |
-/// |  |SectorCipher|  |  (XTS encryption)
-/// |  +-----+------+  |
-/// +--------+---------+
-///          |
-/// +--------v---------+
-/// | StorageBackend   |  (file, cloud, etc.)
-/// +------------------+
-/// ```
-///
-/// ## Caching Strategy
-///
-/// Chunks are cached in decrypted form to avoid repeated decryption:
-/// - On read: Check cache first, fetch from backend and decrypt on miss
-/// - On write: Modify chunk in cache, mark as dirty
-/// - Dirty chunks are encrypted and written back on flush or eviction
+//! Volume I/O Engine with LRU caching and storage backend abstraction
+//!
+//! This module provides the core I/O layer for encrypted volumes. It handles:
+//! - Chunk-based read/write operations with XTS-AES encryption
+//! - LRU caching of decrypted chunks for performance
+//! - Storage backend abstraction for local files and future cloud support
+//!
+//! ## Architecture
+//!
+//! ```text
+//! +------------------+
+//! |   Filesystem     |  (FUSE/WinFsp)
+//! +--------+---------+
+//!          |
+//! +--------v---------+
+//! |    VolumeIO      |  <- This module
+//! |  +------------+  |
+//! |  | LRU Cache  |  |  (decrypted chunks)
+//! |  +-----+------+  |
+//! |        |         |
+//! |  +-----v------+  |
+//! |  |ChunkMapper |  |  (offset translation)
+//! |  +-----+------+  |
+//! |        |         |
+//! |  +-----v------+  |
+//! |  |SectorCipher|  |  (XTS encryption)
+//! |  +-----+------+  |
+//! +--------+---------+
+//!          |
+//! +--------v---------+
+//! | StorageBackend   |  (file, cloud, etc.)
+//! +------------------+
+//! ```
+//!
+//! ## Caching Strategy
+//!
+//! Chunks are cached in decrypted form to avoid repeated decryption:
+//! - On read: Check cache first, fetch from backend and decrypt on miss
+//! - On write: Modify chunk in cache, mark as dirty
+//! - Dirty chunks are encrypted and written back on flush or eviction
 
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::num::NonZeroUsize;

@@ -1,6 +1,6 @@
-/// Secure Cryptor Daemon
-///
-/// Long-running background service for managing encrypted volume mounts
+//! Secure Cryptor Daemon
+//!
+//! Long-running background service for managing encrypted volume mounts
 
 use tesseract::daemon::DaemonServer;
 

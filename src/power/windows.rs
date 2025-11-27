@@ -1,6 +1,6 @@
-/// Windows power state monitoring implementation
-///
-/// Uses Windows Power Management API to monitor system power events
+//! Windows power state monitoring implementation
+//!
+//! Uses Windows Power Management API to monitor system power events
 
 use super::{PowerCallback, PowerEvent, Result};
 use std::sync::{Arc, Mutex};

@@ -1,8 +1,8 @@
-/// Volume management module
-///
-/// Provides centralized management of mounted encrypted volumes, including
-/// tracking mount points, preventing double-mounting, and coordinating
-/// mount/unmount operations across the application.
+//! Volume management module
+//!
+//! Provides centralized management of mounted encrypted volumes, including
+//! tracking mount points, preventing double-mounting, and coordinating
+//! mount/unmount operations across the application.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -151,7 +151,7 @@ impl ManagedVolume {
 ///     options
 /// ).unwrap();
 ///
-/// println!("Mounted at: {:?}", volume.mount_point());
+/// println!("Mounted at: {:?}", volume.mount_point);
 ///
 /// // List all mounted volumes
 /// for info in manager.list_mounted() {

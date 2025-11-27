@@ -1,61 +1,61 @@
-/// Encrypted container format
-///
-/// This module defines the on-disk format for encrypted containers.
-///
-/// ## Container Layout (V2)
-///
-/// ```text
-/// ┌──────────────────────────────────────────────────────────┐
-/// │ Offset: 0x0000 (0 KB)                                    │
-/// │ Primary Volume Header (4 KB)                             │
-/// │ - Magic bytes: SECVOL01                                  │
-/// │ - Version: 2 (with post-quantum support)                 │
-/// │ - Cipher algorithm (AES-256-GCM)                         │
-/// │ - Volume size, sector size                               │
-/// │ - Timestamps, PQ metadata reference                      │
-/// │ - BLAKE3 checksum for integrity verification             │
-/// └──────────────────────────────────────────────────────────┘
-/// ┌──────────────────────────────────────────────────────────┐
-/// │ Offset: 0x1000 (4 KB)                                    │
-/// │ PQ Metadata (variable size, ~1KB typical)                │
-/// │ - ML-KEM-1024 encapsulation key                          │
-/// │ - Ciphertext and encrypted decapsulation key             │
-/// │ - Provides post-quantum resistance                       │
-/// └──────────────────────────────────────────────────────────┘
-/// ┌──────────────────────────────────────────────────────────┐
-/// │ Offset: 0x2000 (8 KB)                                    │
-/// │ Key Slots (8 KB - 8 slots × 1KB each)                    │
-/// │ - Up to 8 independent passwords                          │
-/// │ - Each slot: active flag, salt, nonce, encrypted MK      │
-/// │ - Supports multi-user access                             │
-/// └──────────────────────────────────────────────────────────┘
-/// ┌──────────────────────────────────────────────────────────┐
-/// │ Offset: 0x4000 (16 KB)                                   │
-/// │ Encrypted Data Area (user-specified size)                │
-/// │ - Encrypted filesystem/application data                  │
-/// │ - Each sector encrypted with AES-256-GCM                 │
-/// │ - Sector size from header (typically 4096 bytes)         │
-/// │ - Hybrid encryption: ML-KEM-1024 + AES-256-GCM           │
-/// └──────────────────────────────────────────────────────────┘
-/// ┌──────────────────────────────────────────────────────────┐
-/// │ Offset: volume_size - HEADER_SIZE                        │
-/// │ Backup Volume Header (4 KB)                              │
-/// │ - Duplicate of primary header for corruption recovery    │
-/// │ - Located at end of file (LUKS/VeraCrypt style)          │
-/// │ - Verified on volume open, used for recovery if needed   │
-/// └──────────────────────────────────────────────────────────┘
-/// ```
-///
-/// Total metadata size: 16 KB front + 4 KB backup header at end
-///
-/// ## Security Features
-///
-/// - **Master Key Protection**: The volume's master key is encrypted separately
-///   in each active key slot using a user-derived key (Argon2id KDF)
-/// - **Multi-User Support**: Up to 8 different passwords can unlock the same volume
-/// - **Authenticated Encryption**: AES-256-GCM provides both confidentiality and integrity
-/// - **Key Derivation**: Argon2id with high memory/time parameters prevents brute-force
-/// - **Secure Deletion**: Master keys are zeroized in memory on drop
+//! Encrypted container format
+//!
+//! This module defines the on-disk format for encrypted containers.
+//!
+//! ## Container Layout (V2)
+//!
+//! ```text
+//! ┌──────────────────────────────────────────────────────────┐
+//! │ Offset: 0x0000 (0 KB)                                    │
+//! │ Primary Volume Header (4 KB)                             │
+//! │ - Magic bytes: SECVOL01                                  │
+//! │ - Version: 2 (with post-quantum support)                 │
+//! │ - Cipher algorithm (AES-256-GCM)                         │
+//! │ - Volume size, sector size                               │
+//! │ - Timestamps, PQ metadata reference                      │
+//! │ - BLAKE3 checksum for integrity verification             │
+//! └──────────────────────────────────────────────────────────┘
+//! ┌──────────────────────────────────────────────────────────┐
+//! │ Offset: 0x1000 (4 KB)                                    │
+//! │ PQ Metadata (variable size, ~1KB typical)                │
+//! │ - ML-KEM-1024 encapsulation key                          │
+//! │ - Ciphertext and encrypted decapsulation key             │
+//! │ - Provides post-quantum resistance                       │
+//! └──────────────────────────────────────────────────────────┘
+//! ┌──────────────────────────────────────────────────────────┐
+//! │ Offset: 0x2000 (8 KB)                                    │
+//! │ Key Slots (8 KB - 8 slots × 1KB each)                    │
+//! │ - Up to 8 independent passwords                          │
+//! │ - Each slot: active flag, salt, nonce, encrypted MK      │
+//! │ - Supports multi-user access                             │
+//! └──────────────────────────────────────────────────────────┘
+//! ┌──────────────────────────────────────────────────────────┐
+//! │ Offset: 0x4000 (16 KB)                                   │
+//! │ Encrypted Data Area (user-specified size)                │
+//! │ - Encrypted filesystem/application data                  │
+//! │ - Each sector encrypted with AES-256-GCM                 │
+//! │ - Sector size from header (typically 4096 bytes)         │
+//! │ - Hybrid encryption: ML-KEM-1024 + AES-256-GCM           │
+//! └──────────────────────────────────────────────────────────┘
+//! ┌──────────────────────────────────────────────────────────┐
+//! │ Offset: volume_size - HEADER_SIZE                        │
+//! │ Backup Volume Header (4 KB)                              │
+//! │ - Duplicate of primary header for corruption recovery    │
+//! │ - Located at end of file (LUKS/VeraCrypt style)          │
+//! │ - Verified on volume open, used for recovery if needed   │
+//! └──────────────────────────────────────────────────────────┘
+//! ```
+//!
+//! Total metadata size: 16 KB front + 4 KB backup header at end
+//!
+//! ## Security Features
+//!
+//! - **Master Key Protection**: The volume's master key is encrypted separately
+//!   in each active key slot using a user-derived key (Argon2id KDF)
+//! - **Multi-User Support**: Up to 8 different passwords can unlock the same volume
+//! - **Authenticated Encryption**: AES-256-GCM provides both confidentiality and integrity
+//! - **Key Derivation**: Argon2id with high memory/time parameters prevents brute-force
+//! - **Secure Deletion**: Master keys are zeroized in memory on drop
 
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
@@ -101,11 +101,11 @@ use crate::config::CryptoConfig;
 /// Offset to primary volume header (always at start of file)
 pub const PRIMARY_HEADER_OFFSET: u64 = 0;
 
-/// Location strategy for backup volume header:
-/// The backup header is stored at the END of the volume file to avoid conflicts
-/// with PQ metadata and provide better corruption resistance.
-/// Calculation: volume_file_size - HEADER_SIZE
-/// This follows the LUKS/VeraCrypt convention of end-of-volume backup headers.
+// Location strategy for backup volume header:
+// The backup header is stored at the END of the volume file to avoid conflicts
+// with PQ metadata and provide better corruption resistance.
+// Calculation: volume_file_size - HEADER_SIZE
+// This follows the LUKS/VeraCrypt convention of end-of-volume backup headers.
 
 /// Offset to PQ metadata section (for V2 volumes with post-quantum cryptography)
 /// Located after the primary header at 4KB offset

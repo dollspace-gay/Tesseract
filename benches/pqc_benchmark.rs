@@ -250,7 +250,7 @@ fn bench_pqc_data_sizes(c: &mut Criterion) {
 }
 
 fn bench_volume_header_pqc(c: &mut Criterion) {
-    use tesseract::volume::header::{VolumeHeader, PqVolumeMetadata, PqAlgorithm};
+    use tesseract::volume::header::{VolumeHeader, PqVolumeMetadata, PqAlgorithm, PQ_METADATA_SIZE};
 
     let mut group = c.benchmark_group("volume_header_pqc");
 
@@ -258,15 +258,28 @@ fn bench_volume_header_pqc(c: &mut Criterion) {
     let keypair = MlKemKeyPair::generate();
     let (ciphertext, _) = encapsulate(keypair.encapsulation_key()).unwrap();
 
-    use base64::Engine;
+    // ML-KEM-1024 key sizes
+    const MLKEM1024_EK_SIZE: usize = 1568;
+    const MLKEM1024_CT_SIZE: usize = 1568;
+    const ENCRYPTED_DK_SIZE: usize = 3196; // nonce (12) + DK (3168) + tag (16)
+
+    // Copy key data into fixed-size arrays
+    let mut ek_array = [0u8; MLKEM1024_EK_SIZE];
+    let mut ct_array = [0u8; MLKEM1024_CT_SIZE];
+    let edk_array = [0u8; ENCRYPTED_DK_SIZE]; // Placeholder for benchmark
+
+    let ek_bytes = keypair.encapsulation_key();
+    ek_array[..ek_bytes.len().min(MLKEM1024_EK_SIZE)].copy_from_slice(&ek_bytes[..ek_bytes.len().min(MLKEM1024_EK_SIZE)]);
+    ct_array[..ciphertext.len().min(MLKEM1024_CT_SIZE)].copy_from_slice(&ciphertext[..ciphertext.len().min(MLKEM1024_CT_SIZE)]);
+
     let pq_metadata = PqVolumeMetadata {
         algorithm: PqAlgorithm::MlKem1024,
-        encapsulation_key: base64::engine::general_purpose::STANDARD.encode(keypair.encapsulation_key()),
-        ciphertext: base64::engine::general_purpose::STANDARD.encode(&ciphertext),
-        encrypted_decapsulation_key: "benchmark_encrypted_key".to_string(),
+        encapsulation_key: ek_array,
+        ciphertext: ct_array,
+        encrypted_decapsulation_key: edk_array,
     };
 
-    let pq_size = pq_metadata.to_json_bytes().unwrap().len() as u32;
+    let pq_size = pq_metadata.to_bytes().unwrap().len() as u32;
 
     // Benchmark creating a V2 header with PQC
     group.bench_function("create_v2_header_with_pqc", |b| {
@@ -326,21 +339,24 @@ fn bench_volume_header_pqc(c: &mut Criterion) {
         });
     });
 
-    // Benchmark PqVolumeMetadata serialization
+    // Benchmark PqVolumeMetadata serialization (now using bincode)
     group.bench_function("pq_metadata_serialization", |b| {
         b.iter(|| {
-            let bytes = pq_metadata.to_json_bytes().unwrap();
+            let bytes = pq_metadata.to_bytes().unwrap();
             black_box(bytes)
         });
     });
 
-    let pq_json_bytes = pq_metadata.to_json_bytes().unwrap();
+    let pq_bytes = pq_metadata.to_bytes().unwrap();
     group.bench_function("pq_metadata_deserialization", |b| {
         b.iter(|| {
-            let metadata = PqVolumeMetadata::from_json_bytes(&pq_json_bytes).unwrap();
+            let metadata = PqVolumeMetadata::from_bytes(&pq_bytes).unwrap();
             black_box(metadata)
         });
     });
+
+    // Verify bincode serialization produces expected size
+    assert_eq!(pq_bytes.len(), PQ_METADATA_SIZE, "PQ metadata size mismatch");
 
     group.finish();
 }

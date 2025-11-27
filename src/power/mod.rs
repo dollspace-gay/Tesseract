@@ -1,7 +1,7 @@
-/// Power state monitoring module
-///
-/// Monitors system power events (suspend, hibernate, shutdown) to ensure
-/// encrypted volumes are safely unmounted before power state transitions.
+//! Power state monitoring module
+//!
+//! Monitors system power events (suspend, hibernate, shutdown) to ensure
+//! encrypted volumes are safely unmounted before power state transitions.
 
 use thiserror::Error;
 

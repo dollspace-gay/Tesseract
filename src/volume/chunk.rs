@@ -1,28 +1,28 @@
-/// Volume-level chunk mapping for logical offset translation
-///
-/// This module provides functionality to map logical byte offsets within an
-/// encrypted volume to chunk IDs and chunk-relative offsets. This is essential
-/// for efficient random access within large encrypted volumes.
-///
-/// ## Chunking Strategy
-///
-/// The volume data area is divided into fixed-size chunks (default 4MB).
-/// Each chunk is independently addressable and can be:
-/// - Encrypted/decrypted independently (using sector-based XTS encryption)
-/// - Cached independently for performance
-/// - Mapped to underlying storage sectors
-///
-/// ## Mapping Example
-///
-/// For a volume with 4MB (4,194,304 bytes) chunks:
-/// - Logical offset 0 → Chunk 0, offset 0
-/// - Logical offset 5,000,000 → Chunk 1, offset 805,696
-/// - Logical offset 12,000,000 → Chunk 2, offset 3,611,392
-///
-/// ## Integration with Sector Encryption
-///
-/// Chunks contain multiple sectors. The chunk-relative offset is further
-/// divided into sector index and sector-relative offset for encryption.
+//! Volume-level chunk mapping for logical offset translation
+//!
+//! This module provides functionality to map logical byte offsets within an
+//! encrypted volume to chunk IDs and chunk-relative offsets. This is essential
+//! for efficient random access within large encrypted volumes.
+//!
+//! ## Chunking Strategy
+//!
+//! The volume data area is divided into fixed-size chunks (default 4MB).
+//! Each chunk is independently addressable and can be:
+//! - Encrypted/decrypted independently (using sector-based XTS encryption)
+//! - Cached independently for performance
+//! - Mapped to underlying storage sectors
+//!
+//! ## Mapping Example
+//!
+//! For a volume with 4MB (4,194,304 bytes) chunks:
+//! - Logical offset 0 → Chunk 0, offset 0
+//! - Logical offset 5,000,000 → Chunk 1, offset 805,696
+//! - Logical offset 12,000,000 → Chunk 2, offset 3,611,392
+//!
+//! ## Integration with Sector Encryption
+//!
+//! Chunks contain multiple sectors. The chunk-relative offset is further
+//! divided into sector index and sector-relative offset for encryption.
 
 use thiserror::Error;
 

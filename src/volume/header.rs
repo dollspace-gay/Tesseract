@@ -1,7 +1,7 @@
-/// Volume header format for encrypted volumes
-///
-/// The header contains all metadata necessary to mount and decrypt an encrypted volume.
-/// It is stored at the beginning of the volume file.
+//! Volume header format for encrypted volumes
+//!
+//! The header contains all metadata necessary to mount and decrypt an encrypted volume.
+//! It is stored at the beginning of the volume file.
 
 use serde::{Deserialize, Serialize};
 use serde_big_array::BigArray;

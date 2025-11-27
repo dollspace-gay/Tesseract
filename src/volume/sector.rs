@@ -1,37 +1,37 @@
-/// Sector-based encryption using XTS-AES-256
-///
-/// This module implements XTS-AES-256 (IEEE P1619) for transparent disk encryption.
-/// XTS mode is specifically designed for storage encryption and provides better
-/// security properties than other modes for fixed-size sectors.
-///
-/// ## Key Features
-///
-/// - **XTS-AES-256**: Industry standard for disk encryption (used by BitLocker, FileVault, dm-crypt)
-/// - **Fixed Sector Size**: Typically 512 or 4096 bytes
-/// - **Sector Addressing**: Each sector encrypted with its index for diffusion
-/// - **No Expansion**: Ciphertext is same size as plaintext (no authentication tag)
-/// - **Random Access**: Can encrypt/decrypt individual sectors independently
-///
-/// ## Security Properties
-///
-/// - **Tweakable**: Each sector uses a unique tweak (sector index)
-/// - **No Patterns**: Identical plaintext sectors at different positions produce different ciphertext
-/// - **Performance**: Fast encryption/decryption with hardware AES acceleration
-/// - **Deterministic**: Same sector index + same plaintext = same ciphertext (required for overwrite semantics)
-///
-/// ## Note on XTS vs GCM
-///
-/// XTS-AES uses **sector indices as tweaks**, NOT random nonces like GCM:
-/// - The sector index uniquely identifies each sector position on disk
-/// - This is NOT a nonce collision risk because sector indices are sequential and deterministic
-/// - XTS is specifically designed for this use case (IEEE P1619 standard)
-/// - GCM would require storing authentication tags (16 bytes per sector), expanding storage
-///
-/// ## Note on Authentication
-///
-/// XTS-AES does NOT provide authentication (unlike GCM). This is by design for
-/// disk encryption where sector sizes must be fixed. Authentication can be
-/// added at a higher layer if needed (e.g., in the filesystem).
+//! Sector-based encryption using XTS-AES-256
+//!
+//! This module implements XTS-AES-256 (IEEE P1619) for transparent disk encryption.
+//! XTS mode is specifically designed for storage encryption and provides better
+//! security properties than other modes for fixed-size sectors.
+//!
+//! ## Key Features
+//!
+//! - **XTS-AES-256**: Industry standard for disk encryption (used by BitLocker, FileVault, dm-crypt)
+//! - **Fixed Sector Size**: Typically 512 or 4096 bytes
+//! - **Sector Addressing**: Each sector encrypted with its index for diffusion
+//! - **No Expansion**: Ciphertext is same size as plaintext (no authentication tag)
+//! - **Random Access**: Can encrypt/decrypt individual sectors independently
+//!
+//! ## Security Properties
+//!
+//! - **Tweakable**: Each sector uses a unique tweak (sector index)
+//! - **No Patterns**: Identical plaintext sectors at different positions produce different ciphertext
+//! - **Performance**: Fast encryption/decryption with hardware AES acceleration
+//! - **Deterministic**: Same sector index + same plaintext = same ciphertext (required for overwrite semantics)
+//!
+//! ## Note on XTS vs GCM
+//!
+//! XTS-AES uses **sector indices as tweaks**, NOT random nonces like GCM:
+//! - The sector index uniquely identifies each sector position on disk
+//! - This is NOT a nonce collision risk because sector indices are sequential and deterministic
+//! - XTS is specifically designed for this use case (IEEE P1619 standard)
+//! - GCM would require storing authentication tags (16 bytes per sector), expanding storage
+//!
+//! ## Note on Authentication
+//!
+//! XTS-AES does NOT provide authentication (unlike GCM). This is by design for
+//! disk encryption where sector sizes must be fixed. Authentication can be
+//! added at a higher layer if needed (e.g., in the filesystem).
 
 use aes::Aes256;
 #[allow(deprecated)]

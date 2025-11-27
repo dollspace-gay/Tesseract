@@ -1,7 +1,7 @@
-/// In-memory encrypted filesystem implementation
-///
-/// This module provides a concrete implementation of the EncryptedFilesystem trait
-/// that stores file data and metadata in memory with transparent encryption.
+//! In-memory encrypted filesystem implementation
+//!
+//! This module provides a concrete implementation of the EncryptedFilesystem trait
+//! that stores file data and metadata in memory with transparent encryption.
 
 use super::filesystem::{
     DirEntry, EncryptedFilesystem, FileAttr, FileType, FilesystemError, Result,

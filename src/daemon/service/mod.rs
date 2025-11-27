@@ -1,9 +1,9 @@
-/// Platform-specific service integration
-///
-/// Provides system service registration and management for:
-/// - Windows Service Control Manager
-/// - Linux systemd
-/// - macOS launchd
+//! Platform-specific service integration
+//!
+//! Provides system service registration and management for:
+//! - Windows Service Control Manager
+//! - Linux systemd
+//! - macOS launchd
 
 #[cfg(windows)]
 pub mod windows;

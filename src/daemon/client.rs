@@ -1,6 +1,6 @@
-/// Daemon client implementation
-///
-/// Provides a client interface for communicating with the daemon server
+//! Daemon client implementation
+//!
+//! Provides a client interface for communicating with the daemon server
 
 use std::path::PathBuf;
 use std::io::{Read, Write};

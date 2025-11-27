@@ -1,8 +1,8 @@
-/// Auto-mount service for encrypted volumes
-///
-/// Provides functionality to automatically mount encrypted volumes during
-/// system startup after the OS has loaded, with support for password prompts,
-/// TPM unsealing, and systemd/Windows service integration.
+//! Auto-mount service for encrypted volumes
+//!
+//! Provides functionality to automatically mount encrypted volumes during
+//! system startup after the OS has loaded, with support for password prompts,
+//! TPM unsealing, and systemd/Windows service integration.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

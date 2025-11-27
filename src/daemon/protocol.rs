@@ -1,6 +1,6 @@
-/// IPC protocol for daemon communication
-///
-/// Uses a simple JSON-based protocol over Unix domain sockets (or named pipes on Windows)
+//! IPC protocol for daemon communication
+//!
+//! Uses a simple JSON-based protocol over Unix domain sockets (or named pipes on Windows)
 
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};

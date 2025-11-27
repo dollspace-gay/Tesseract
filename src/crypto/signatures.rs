@@ -54,7 +54,8 @@ impl MlDsaKeyPair {
     /// ```
     /// use tesseract::crypto::signatures::{MlDsaKeyPair, SecurityLevel};
     ///
-    /// let keypair = MlDsaKeyPair::generate(SecurityLevel::Level65);
+    /// // Use Level44 for smaller stack footprint in examples
+    /// let keypair = MlDsaKeyPair::generate(SecurityLevel::Level44);
     /// ```
     pub fn generate(level: SecurityLevel) -> Self {
         use rand::RngCore;
@@ -131,7 +132,8 @@ impl MlDsaKeyPair {
     /// ```
     /// use tesseract::crypto::signatures::{MlDsaKeyPair, SecurityLevel};
     ///
-    /// let keypair = MlDsaKeyPair::generate(SecurityLevel::Level65);
+    /// // Use Level44 for smaller stack footprint in examples
+    /// let keypair = MlDsaKeyPair::generate(SecurityLevel::Level44);
     /// let message = b"Important message";
     /// let signature = keypair.sign(message).unwrap();
     /// ```
@@ -221,11 +223,12 @@ impl MlDsaKeyPair {
 /// ```
 /// use tesseract::crypto::signatures::{MlDsaKeyPair, SecurityLevel, verify};
 ///
-/// let keypair = MlDsaKeyPair::generate(SecurityLevel::Level65);
+/// // Use Level44 for smaller stack footprint in examples
+/// let keypair = MlDsaKeyPair::generate(SecurityLevel::Level44);
 /// let message = b"Important message";
 /// let signature = keypair.sign(message).unwrap();
 ///
-/// verify(SecurityLevel::Level65, keypair.verifying_key(), message, &signature).unwrap();
+/// verify(SecurityLevel::Level44, keypair.verifying_key(), message, &signature).unwrap();
 /// ```
 pub fn verify(
     level: SecurityLevel,

@@ -13,7 +13,7 @@
 //! # Example
 //!
 //! ```
-//! use tesseract::memory::scrub::{scrub_bytes, ScrubPattern};
+//! use tesseract::memory::scrub::{scrub_bytes, scrub_bytes_pattern, ScrubPattern};
 //!
 //! let mut sensitive_data = vec![0x42; 1024];
 //!
@@ -119,7 +119,7 @@ pub fn scrub_bytes(data: &mut [u8]) {
 ///
 /// let mut secret = vec![0x42; 256];
 /// let stats = scrub_bytes_pattern(&mut secret, ScrubPattern::Dod522022M);
-/// assert_eq!(stats.passes, 3); // DoD standard uses 3 passes
+/// assert_eq!(stats.passes, 4); // DoD standard uses 3 passes + final zero
 /// ```
 pub fn scrub_bytes_pattern(data: &mut [u8], pattern: ScrubPattern) -> ScrubStats {
     let bytes_scrubbed = data.len();

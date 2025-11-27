@@ -1,10 +1,10 @@
-/// Daemon module for managing long-running volume mount operations
-///
-/// The daemon provides:
-/// - Persistent tracking of mounted volumes across process boundaries
-/// - IPC interface for mount/unmount/list operations
-/// - Platform-specific service integration
-/// - Automatic cleanup on shutdown
+//! Daemon module for managing long-running volume mount operations
+//!
+//! The daemon provides:
+//! - Persistent tracking of mounted volumes across process boundaries
+//! - IPC interface for mount/unmount/list operations
+//! - Platform-specific service integration
+//! - Automatic cleanup on shutdown
 
 pub mod protocol;
 pub mod server;
