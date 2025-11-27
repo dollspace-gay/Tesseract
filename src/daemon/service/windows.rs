@@ -33,7 +33,7 @@ pub fn install_service() -> Result<(), Box<dyn std::error::Error>> {
 
     // Use sc.exe to create the service
     let output = Command::new("sc")
-        .args(&[
+        .args([
             "create",
             SERVICE_NAME,
             &format!("binPath= \"{}\" --service", exe_path.display()),
@@ -64,12 +64,12 @@ pub fn uninstall_service() -> Result<(), Box<dyn std::error::Error>> {
 
     // Stop the service first if it's running
     let _ = Command::new("sc")
-        .args(&["stop", SERVICE_NAME])
+        .args(["stop", SERVICE_NAME])
         .output();
 
     // Delete the service
     let output = Command::new("sc")
-        .args(&["delete", SERVICE_NAME])
+        .args(["delete", SERVICE_NAME])
         .output()?;
 
     if output.status.success() {

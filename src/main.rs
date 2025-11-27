@@ -949,7 +949,7 @@ fn handle_daemon_command(cmd: DaemonCommands) -> Result<(), CryptorError> {
             let server = DaemonServer::new();
             server.run()
                 .map_err(|e| CryptorError::Io(
-                    std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
+                    std::io::Error::other(e.to_string())
                 ))?;
         }
         DaemonCommands::Stop => {
@@ -965,7 +965,7 @@ fn handle_daemon_command(cmd: DaemonCommands) -> Result<(), CryptorError> {
                 Ok(_) => println!("✓ Daemon stopped successfully."),
                 Err(e) => {
                     return Err(CryptorError::Io(
-                        std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to stop daemon: {}", e))
+                        std::io::Error::other(format!("Failed to stop daemon: {}", e))
                     ));
                 }
             }
@@ -997,7 +997,7 @@ fn handle_daemon_command(cmd: DaemonCommands) -> Result<(), CryptorError> {
                 use tesseract::daemon::service;
                 service::install_service()
                     .map_err(|e| CryptorError::Io(
-                        std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
+                        std::io::Error::other(e.to_string())
                     ))?;
             }
             #[cfg(target_os = "linux")]
@@ -1023,7 +1023,7 @@ fn handle_daemon_command(cmd: DaemonCommands) -> Result<(), CryptorError> {
                 use tesseract::daemon::service;
                 service::uninstall_service()
                     .map_err(|e| CryptorError::Io(
-                        std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
+                        std::io::Error::other(e.to_string())
                     ))?;
             }
             #[cfg(target_os = "linux")]
@@ -1048,16 +1048,16 @@ fn handle_daemon_command(cmd: DaemonCommands) -> Result<(), CryptorError> {
             {
                 use std::process::Command;
                 let output = Command::new("sc")
-                    .args(&["start", "TesseractDaemon"])
+                    .args(["start", "TesseractDaemon"])
                     .output()
-                    .map_err(|e| CryptorError::Io(e))?;
+                    .map_err(CryptorError::Io)?;
 
                 if output.status.success() {
                     println!("✓ Service started successfully.");
                 } else {
                     let error = String::from_utf8_lossy(&output.stderr);
                     return Err(CryptorError::Io(
-                        std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to start service: {}", error))
+                        std::io::Error::other(format!("Failed to start service: {}", error))
                     ));
                 }
             }
@@ -1083,16 +1083,16 @@ fn handle_daemon_command(cmd: DaemonCommands) -> Result<(), CryptorError> {
             {
                 use std::process::Command;
                 let output = Command::new("sc")
-                    .args(&["stop", "TesseractDaemon"])
+                    .args(["stop", "TesseractDaemon"])
                     .output()
-                    .map_err(|e| CryptorError::Io(e))?;
+                    .map_err(CryptorError::Io)?;
 
                 if output.status.success() {
                     println!("✓ Service stopped successfully.");
                 } else {
                     let error = String::from_utf8_lossy(&output.stderr);
                     return Err(CryptorError::Io(
-                        std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to stop service: {}", error))
+                        std::io::Error::other(format!("Failed to stop service: {}", error))
                     ));
                 }
             }

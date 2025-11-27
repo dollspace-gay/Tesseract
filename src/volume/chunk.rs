@@ -169,7 +169,7 @@ impl ChunkMapper {
         }
 
         // Chunk size must be aligned to sector size
-        if chunk_size % sector_size != 0 {
+        if !chunk_size.is_multiple_of(sector_size) {
             return Err(ChunkError::ChunkSectorMisalignment { chunk_size, sector_size });
         }
 
