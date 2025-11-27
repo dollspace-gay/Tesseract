@@ -544,8 +544,8 @@ impl VolumeIOFilesystem {
         Ok(inode)
     }
 
-    /// Writes an inode to disk (and updates cache)
-    fn write_inode(&self, inode_num: u32, inode: &Inode) -> Result<()> {
+    /// Writes an inode to disk without updating cache (used by sync to avoid deadlock)
+    fn write_inode_no_cache(&self, inode_num: u32, inode: &Inode) -> Result<()> {
         let (block, offset) = self.inode_location(inode_num);
 
         // Read the block, modify the inode, write back
@@ -556,6 +556,13 @@ impl VolumeIOFilesystem {
 
         block_data[offset..offset + inode_bytes.len()].copy_from_slice(&inode_bytes);
         self.write_block(block, &block_data)?;
+
+        Ok(())
+    }
+
+    /// Writes an inode to disk (and updates cache)
+    fn write_inode(&self, inode_num: u32, inode: &Inode) -> Result<()> {
+        self.write_inode_no_cache(inode_num, inode)?;
 
         // Update cache
         {
@@ -1045,12 +1052,15 @@ impl VolumeIOFilesystem {
 
     /// Flushes all cached data to disk
     pub fn sync(&self) -> Result<()> {
-        // Flush inode cache
-        let cache = self.inode_cache.read().map_err(|_| VolumeIOFsError::LockPoisoned)?;
-        for (&inode_num, inode) in cache.iter() {
-            self.write_inode(inode_num, inode)?;
+        // Flush inode cache - collect entries first to avoid holding lock during writes
+        let entries: Vec<(u32, Inode)> = {
+            let cache = self.inode_cache.read().map_err(|_| VolumeIOFsError::LockPoisoned)?;
+            cache.iter().map(|(&k, v)| (k, v.clone())).collect()
+        };
+
+        for (inode_num, inode) in entries {
+            self.write_inode_no_cache(inode_num, &inode)?;
         }
-        drop(cache);
 
         // Flush block bitmap
         if let Some(bitmap) = self.block_bitmap.read().map_err(|_| VolumeIOFsError::LockPoisoned)?.as_ref() {
