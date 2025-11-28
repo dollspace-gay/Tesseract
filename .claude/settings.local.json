@@ -91,7 +91,12 @@
       "Bash(cargo +nightly miri test:*)",
       "Bash(cargo audit:*)",
       "Bash(timeout 30 cargo bench:*)",
-      "Bash(timeout 60 wsl:*)"
+      "Bash(timeout 60 wsl:*)",
+      "Bash(timeout 120 cargo install:*)",
+      "Bash(cargo deny:*)",
+      "Bash(cargo vet init:*)",
+      "Bash(cargo vet suggest:*)",
+      "Bash(cargo vet:*)"
     ],
     "deny": [],
     "ask": []

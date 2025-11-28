@@ -1,0 +1,108 @@
+# cargo-deny configuration for Tesseract Vault
+# Supply chain security policy enforcement
+# https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+# Cross-platform targets to check
+targets = [
+    "x86_64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "wasm32-unknown-unknown",
+]
+all-features = false
+no-default-features = false
+
+[output]
+feature-depth = 1
+
+# Advisory database configuration
+# https://embarkstudios.github.io/cargo-deny/checks/advisories/cfg.html
+[advisories]
+ignore = [
+    # GTK3 ecosystem - all transitive deps from tray-icon, no safe upgrades available
+    # The tray-icon crate requires GTK3 on Linux which pulls in the entire unmaintained GTK3-rs ecosystem
+    { id = "RUSTSEC-2024-0412", reason = "gdk: transitive dep from tray-icon, no upgrade available" },
+    { id = "RUSTSEC-2024-0413", reason = "atk: transitive dep from tray-icon, no upgrade available" },
+    { id = "RUSTSEC-2024-0415", reason = "gtk: transitive dep from tray-icon, no upgrade available" },
+    { id = "RUSTSEC-2024-0416", reason = "atk-sys: transitive dep from tray-icon, no upgrade available" },
+    { id = "RUSTSEC-2024-0418", reason = "gdk-sys: transitive dep from tray-icon, no upgrade available" },
+    { id = "RUSTSEC-2024-0419", reason = "gtk3-macros: transitive dep from tray-icon, no upgrade available" },
+    { id = "RUSTSEC-2024-0420", reason = "gtk-sys: transitive dep from tray-icon, no upgrade available" },
+    { id = "RUSTSEC-2024-0370", reason = "proc-macro-error: transitive dep from GTK bindings, no upgrade available" },
+    { id = "RUSTSEC-2024-0429", reason = "glib: transitive dep from tray-icon/GTK3, unsound but not exploitable in our usage" },
+    # Unmaintained dev dependencies from dudect-bencher->clap v2
+    { id = "RUSTSEC-2021-0139", reason = "ansi_term: dev dep from dudect-bencher->clap, unmaintained" },
+    { id = "RUSTSEC-2021-0145", reason = "atty: dev dep from dudect-bencher->clap, unaligned pointer only with custom allocator" },
+    { id = "RUSTSEC-2024-0375", reason = "atty: dev dep from dudect-bencher->clap, unmaintained" },
+    # Unmaintained paste crate - used by accesskit and rav1e
+    { id = "RUSTSEC-2024-0436", reason = "paste: transitive dep from accesskit/image, no upgrade available" },
+]
+
+# License configuration
+# https://embarkstudios.github.io/cargo-deny/checks/licenses/cfg.html
+[licenses]
+# Allowed licenses for this cryptographic project
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "0BSD",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "CC0-1.0",
+    "MPL-2.0",
+    "BSL-1.0",      # Boost Software License (clipboard-win, error-code)
+    "OFL-1.1",      # SIL Open Font License (epaint_default_fonts)
+]
+confidence-threshold = 0.8
+
+# Per-crate license exceptions
+exceptions = [
+    # epaint_default_fonts has embedded fonts with UFL license
+    { allow = ["MIT", "Apache-2.0", "OFL-1.1", "LicenseRef-UFL-1.0"], crate = "epaint_default_fonts" },
+]
+
+[licenses.private]
+ignore = false
+registries = []
+
+# Dependency bans
+# https://embarkstudios.github.io/cargo-deny/checks/bans/cfg.html
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all"
+workspace-default-features = "allow"
+external-default-features = "allow"
+
+allow = []
+
+# Deny problematic or insecure crates
+deny = [
+    # Prefer ring/rustls over OpenSSL
+    { crate = "openssl", reason = "Use ring or rustls instead for better security" },
+    { crate = "openssl-sys", reason = "Use ring or rustls instead" },
+]
+
+skip = []
+skip-tree = []
+
+# Source restrictions
+# https://embarkstudios.github.io/cargo-deny/checks/sources/cfg.html
+[sources]
+# Deny unknown registries and git sources for supply chain security
+unknown-registry = "deny"
+unknown-git = "deny"
+# Only allow crates.io
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
+
+[sources.allow-org]
+github = []
+gitlab = []
+bitbucket = []
