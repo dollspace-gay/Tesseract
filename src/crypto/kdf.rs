@@ -97,6 +97,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg_attr(miri, ignore)] // Miri is too slow for Argon2 (64MB memory, 3 iterations)
     fn test_derive_key_deterministic() {
         let kdf = Argon2Kdf::default();
         let password = b"test_password";
@@ -109,6 +110,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)] // Miri is too slow for Argon2 (64MB memory, 3 iterations)
     fn test_different_passwords_different_keys() {
         let kdf = Argon2Kdf::default();
         let password1 = b"password1";
@@ -122,6 +124,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)] // Miri is too slow for Argon2 (64MB memory, 3 iterations)
     fn test_different_salts_different_keys() {
         let kdf = Argon2Kdf::default();
         let password = b"test_password";
@@ -146,6 +149,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)] // Miri is too slow for Argon2 even with fast config (16MB memory)
     fn test_custom_config() {
         let config = CryptoConfig::fast();
         let kdf = Argon2Kdf::new(config);
@@ -157,6 +161,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)] // Miri is too slow for Argon2 (64MB memory, 3 iterations)
     fn test_key_length() {
         let kdf = Argon2Kdf::default();
         let password = b"test_password";
