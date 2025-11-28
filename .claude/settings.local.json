@@ -96,7 +96,11 @@
       "Bash(cargo deny:*)",
       "Bash(cargo vet init:*)",
       "Bash(cargo vet suggest:*)",
-      "Bash(cargo vet:*)"
+      "Bash(cargo vet:*)",
+      "Bash(rustup component add:*)",
+      "Bash(cargo +nightly miri setup:*)",
+      "Bash(timeout:*)",
+      "Bash(git revert:*)"
     ],
     "deny": [],
     "ask": []
