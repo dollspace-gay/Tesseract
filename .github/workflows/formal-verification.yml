@@ -9,6 +9,7 @@ on:
 permissions:
   contents: read
   security-events: write  # Required for cargo-audit to upload results
+  issues: write           # Required for cargo-audit to create issues
 
 env:
   RUST_BACKTRACE: 1
